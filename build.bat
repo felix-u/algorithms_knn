@@ -23,7 +23,7 @@ set cl_out=-out:
 set clang_out=-o
 
 set cl_release=%cl_common% /O2
-set clang_release=%clang_common% -O3 -s
+set clang_release=%clang_common% -O3
 
 if "%msvc%"=="1"  set compile_debug=%cl_debug%
 if "%msvc%"=="1"  set compile_release=%cl_release%
