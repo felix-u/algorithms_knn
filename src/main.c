@@ -3,5 +3,5 @@
 
 void entrypoint(void) {
     print("Hey\n");
-    ExitProcess(0);
+    exit(0);
 }

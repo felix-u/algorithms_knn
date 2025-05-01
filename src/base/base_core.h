@@ -10,6 +10,7 @@
     #include <unistd.h>
 
 #elif OS_LINUX
+    void exit(int); // TODO(felix): can remove?
     void abort(void); // TODO(felix): own implementation to not depend on libc
     void *calloc(size_t item_count, size_t item_size); // TODO(felix): remove once using virtual alloc arena
     void free(void *pointer); // TODO(felix): remove once using virtual alloc arena
@@ -20,6 +21,7 @@
 
 #elif OS_MACOS
     // TODO(felix): same notes as above
+    void exit(int);
     void abort(void);
     void *calloc(size_t item_count, size_t item_size);
     void free(void *pointer);
@@ -31,6 +33,7 @@
     #define WIN32_LEAN_AND_MEAN
     #define VC_EXTRALEAN
     #define abort() ExitProcess(1) // TODO(felix): remove this
+    #define exit(code) ExitProcess(code)
     #if !BASE_GRAPHICS
         #define NOGDI
         #define NOUSER
@@ -50,12 +53,21 @@
 #endif // OS
 
 
+// TODO(felix): replace with something that feels less hacky
+#if OS_LINUX || OS_MACOS
+    static void entrypoint(void);
+    int main(void) {
+        entrypoint();
+        return 0;
+    }
+#endif
+
+
 #if COMPILER_CLANG || COMPILER_GCC // they share many builtins
     #define builtin_unreachable __builtin_unreachable()
     #define force_inline inline __attribute__((always_inline))
-    #if COMPILER_GCC && !BUILD_RELEASE // TODO(felix): can I avoid this by using nonstandard names for my mem_ defines?
-        #include <string.h>
-    #endif
+    // TODO(felix): this is only for memcmp, etc. fix!
+    #include <string.h>
 #endif
 
 
@@ -82,6 +94,9 @@
     #define force_inline inline
 
 #endif // COMPILER
+
+
+#define static_assert _Static_assert
 
 
 #if BUILD_DEBUG
@@ -247,5 +262,7 @@ static void array_push_slice_explicit_item_size_assume_capacity(Array_void *arra
 // TODO(felix): rename/replace
 static inline int memcmp_(void *a_, void *b_, usize byte_count);
 static inline void *memcpy_(void *destination_, void *source_, usize byte_count);
-#pragma function(memset)
+#if COMPILER_MSVC
+    #pragma function(memset)
+#endif
 extern void *memset(void *destination_, int byte_, usize byte_count);
