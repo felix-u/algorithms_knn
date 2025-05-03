@@ -16,6 +16,16 @@
 // TODO(felix): swap out vectoriser but keep same knn. re-tune on validation, and re-run
 // TODO(felix): compute accuracy, precision/recall/F_1, fill in McNemar table
 
+// djb2 hash
+static inline usize compute_hash(String bytes, usize capacity) {
+    usize value = 5381;
+    for_slice (u8 *, byte, bytes) {
+        value = ((value << 5) + value) + *byte;
+    }
+    value %= capacity;
+    return value;
+}
+
 void entrypoint(void) {
     Arena arena = arena_init(64 * 1024 * 1024);
     Slice_String arguments = os_get_arguments(&arena);
@@ -32,7 +42,7 @@ void entrypoint(void) {
     if (corpus.count == 0) exit(1);
     print("[info] Read %kB from '%'\n", fmt(usize, corpus.count / 1024), fmt(String, path_to_corpus));
 
-    structdef(Document) { String label, text; };
+    structdef(Document) { String label, text; Slice_String words; };
     Array_Document documents = { .arena = &arena };
     usize character_removal_count = 0;
     usize stopword_removal_count = 0;
@@ -59,6 +69,7 @@ void entrypoint(void) {
             array_push_assume_capacity(&abstract_ascii_lowercase, c);
         }
 
+        Array_String words_no_stopwords = { .arena = &arena };
         Array_u8 text_no_stopwords = { .arena = &arena };
         array_ensure_capacity(&text_no_stopwords, abstract_ascii_lowercase.count);
         String text = bit_cast(String) abstract_ascii_lowercase;
@@ -77,15 +88,64 @@ void entrypoint(void) {
                 break;
             }
             if (is_stopword) continue;
+            array_push(&words_no_stopwords, &word);
 
             String to_push = string_range(text, start_index_including_whitespace, j);
             array_push_slice_assume_capacity(&text_no_stopwords, &to_push);
         }
         document.text = bit_cast(String) text_no_stopwords;
+        document.words = bit_cast(Slice_String) words_no_stopwords;
 
         array_push(&documents, &document);
     }
     print("[info] Removed % non-ASCII characters and % stopwords\n", fmt(usize, character_removal_count), fmt(usize, stopword_removal_count));
+
+    structdef(Word_Frequency) { String *word; u16 count; };
+
+    structdef(Hashmap_Pair) {
+        Word_Frequency frequency;
+        Hashmap_Pair *next;
+    };
+
+    typedef Array(Hashmap_Pair *) Array_Hashmap_Pair_Pointer;
+
+    Array_Hashmap_Pair_Pointer word_map = { .arena = &arena };
+    array_ensure_capacity(&word_map, 10000);
+
+    usize unique_count = 0;
+    usize repeat_count = 0;
+    for_slice (Document *, document, documents) for_slice (String *, word, document->words) {
+        usize hash = compute_hash(*word, word_map.capacity);
+        Hashmap_Pair **pair = &word_map.data[hash];
+        while (*pair != 0 && !string_equal(*(*pair)->frequency.word, *word)) pair = &(*pair)->next;
+        if (*pair == 0) {
+            Hashmap_Pair *new_pair = arena_make(&arena, 1, sizeof(Hashmap_Pair));
+            *new_pair = (Hashmap_Pair) { .frequency = { .word = word, .count = 1 } };
+            *pair = new_pair;
+            unique_count += 1;
+        } else {
+            repeat_count += 1;
+            (*pair)->frequency.count = clamp_high((*pair)->frequency.count + 1, 0xffff);
+        }
+    }
+    print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
+
+    Array_Word_Frequency frequencies = { .arena = &arena };
+    usize vocabulary_size = 5000;
+    array_ensure_capacity(&frequencies, vocabulary_size);
+
+    for (usize i = 0; i < vocabulary_size; i += 1) {
+        Word_Frequency *best = 0;
+        for (usize j = 0; j < word_map.capacity; j += 1) {
+            for (Hashmap_Pair *pair = word_map.data[j]; pair != 0; pair = pair->next) {
+                if (best != 0 && (pair->frequency.count <= best->count)) continue;
+                best = &pair->frequency;
+            }
+        }
+        if (best == 0) break;
+        array_push_assume_capacity(&frequencies, best);
+        best->count = 0;
+    }
 
     arena_deinit(&arena);
     exit(0);

@@ -1,4 +1,5 @@
 Slice_String stopwords = slice_from_c_array(((String[]){
+    // NOTE(felix): below are from https://snowballstem.org/algorithms/english/stop.txt
     stringc("which"),
     stringc("who"),
     stringc("whom"),
@@ -125,4 +126,20 @@ Slice_String stopwords = slice_from_c_array(((String[]){
     stringc("than"),
     stringc("too"),
     stringc("very"),
+    // NOTE(felix): below are mine
+    stringc("a"),
+    stringc("and"),
+    stringc("is"),
+    stringc("we"),
+    stringc("are"),
+    stringc("be"),
+    stringc("can"),
+    stringc("it"),
+    stringc("our"),
+    stringc("also"),
+    stringc("has"),
+    stringc("been"),
+    stringc("they"),
+    stringc("was"),
+    stringc("will"),
 }));
