@@ -78,3 +78,58 @@ extern void *memset(void *destination_, int byte_, usize byte_count) {
     for (usize i = 0; i < byte_count; i += 1) destination[i] = byte;
     return destination;
 }
+
+// TODO(felix): replace with something that feels less hacky
+#if OS_LINUX || OS_MACOS
+    static int argument_count_;
+    static char **arguments_;
+
+    static void entrypoint(void);
+    int main(int argument_count, char **arguments) {
+        argument_count_ = argument_count;
+        arguments_ = arguments;
+        entrypoint();
+        return 0;
+    }
+#endif
+
+static Slice_String os_get_arguments(Arena *arena) {
+    Array_String arguments = { .arena = arena };
+
+    #if OS_WINDOWS
+        int argument_count = 0;
+        u16 **arguments_utf16 = CommandLineToArgvW(GetCommandLineW(), &argument_count);
+        if (arguments_utf16 == 0) {
+            log_error("unable to get command line arguments");
+            return (Slice_String){0};
+        }
+
+        array_ensure_capacity(&arguments, (usize)argument_count);
+
+        for (usize i = 0; i < (usize)argument_count; i += 1) {
+            u16 *argument_utf16 = arguments_utf16[i];
+
+            usize length = 0;
+            while (argument_utf16[length] != 0) length += 1;
+
+            // TODO(felix): convert to UTF-8, not ascii
+            Array_u8 argument = { .arena = arena };
+            array_ensure_capacity(&argument, length);
+            for (usize j = 0; j < length; j += 1) {
+                u16 wide_character = argument_utf16[j];
+                assert(wide_character < 128);
+                u8 character = (u8)wide_character;
+                array_push_assume_capacity(&argument, &character);
+            }
+            array_push_assume_capacity(&arguments, (String *)&argument);
+        }
+    #elif OS_LINUX || OS_MACOS
+        array_ensure_capacity(&arguments, argument_count__);
+        for (usize i = 0; i < (usize)argument_count__; i += 1) {
+            String argument = string_from_cstring(arguments__[i]);
+            array_push_assume_capacity(&arguments, &argument);
+        }
+    #endif
+
+    return bit_cast(Slice_String) arguments;
+}

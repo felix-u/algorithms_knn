@@ -10,6 +10,7 @@
     #include <unistd.h>
 
 #elif OS_LINUX
+    #define static_assert _Static_assert
     void exit(int); // TODO(felix): can remove?
     void abort(void); // TODO(felix): own implementation to not depend on libc
     void *calloc(size_t item_count, size_t item_size); // TODO(felix): remove once using virtual alloc arena
@@ -20,6 +21,7 @@
     #include <stdio.h> // TODO(felix): only needed for FILE. remove!
 
 #elif OS_MACOS
+    #define static_assert _Static_assert
     // TODO(felix): same notes as above
     void exit(int);
     void abort(void);
@@ -42,25 +44,14 @@
         // #undef far // TODO(felix): figure out what to do with this - needed by combaseapi.h
     #endif
     #include "windows.h"
+    #include "shellapi.h"
     #define _CRT_SECURE_NO_WARNINGS
     #undef min
     #undef max
     // TODO(felix): these win32_asserts should probably be in base_gfx (at the very least, win32_assert_d3d_compile should be)
     #define win32_ensure_not_0(win32_fn_result) statement_macro( if ((win32_fn_result) == 0) { panic("win32: %", fmt(u64, GetLastError())); } )
-    #define win32_ensure_hr(hresult) statement_macro( HRESULT hr_ = (hresult); if (hr_ != S_OK) { panic("win32: %", fmt(i32, hr_, .base = 16, .prefix = true, .uppercase = true)); } )
-    #define win32_ensure_d3d_compile(hresult, err_blob) statement_macro( if (hresult != S_OK) { panic("D3D compile:\n%", fmt(cstring, err_blob->lpVtbl->GetBufferPointer(err_blob))); } )
 
 #endif // OS
-
-
-// TODO(felix): replace with something that feels less hacky
-#if OS_LINUX || OS_MACOS
-    static void entrypoint(void);
-    int main(void) {
-        entrypoint();
-        return 0;
-    }
-#endif
 
 
 #if COMPILER_CLANG || COMPILER_GCC // they share many builtins
@@ -94,9 +85,6 @@
     #define force_inline inline
 
 #endif // COMPILER
-
-
-#define static_assert _Static_assert
 
 
 #if BUILD_DEBUG
@@ -266,3 +254,5 @@ static inline void *memcpy_(void *destination_, void *source_, usize byte_count)
     #pragma function(memset)
 #endif
 extern void *memset(void *destination_, int byte_, usize byte_count);
+
+static Slice_String os_get_arguments(struct Arena *arena);
