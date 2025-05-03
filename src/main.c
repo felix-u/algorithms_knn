@@ -3,9 +3,7 @@
 
 #include "stopwords.c"
 
-// TODO(felix): sanitise
 // TODO(felix): data ingestion
-    // TODO(felix): read abstracts
     // TODO(felix): shuffle and split into 60% testing, 20% k-validation, 20% test
 // TODO(felix): build vocabulary of 5000 words and write to file
 // TODO(felix): build vectoriser and verify
@@ -36,6 +34,8 @@ void entrypoint(void) {
 
     structdef(Document) { String label, text; };
     Array_Document documents = { .arena = &arena };
+    usize character_removal_count = 0;
+    usize stopword_removal_count = 0;
     for (usize i = 0; i < corpus.count; i += 1) {
         Document document = {0};
 
@@ -51,17 +51,41 @@ void entrypoint(void) {
         Array_u8 abstract_ascii_lowercase = { .arena = &arena };
         array_ensure_capacity(&abstract_ascii_lowercase, abstract.count);
         for_slice (u8 *, c, abstract) {
-            if (!ascii_is_alpha(*c) && !ascii_is_decimal(*c) && *c != ' ' && *c != '\n') continue;
-            if (ascii_is_alpha(*c)) *c &= ~0x20;
+            if (!ascii_is_alpha(*c) && !ascii_is_decimal(*c) && *c != ' ' && *c != '\n') {
+                character_removal_count += 1;
+                continue;
+            }
+            if (ascii_is_alpha(*c)) *c |= 0x20;
             array_push_assume_capacity(&abstract_ascii_lowercase, c);
         }
 
+        Array_u8 text_no_stopwords = { .arena = &arena };
+        array_ensure_capacity(&text_no_stopwords, abstract_ascii_lowercase.count);
+        String text = bit_cast(String) abstract_ascii_lowercase;
+        for (usize j = 0; j < text.count;) {
+            usize start_index_including_whitespace = j;
+            while (j < text.count && ascii_is_whitespace(text.data[j])) j += 1;
+            start_index = j;
+            while (j < text.count && !ascii_is_whitespace(text.data[j])) j += 1;
+            String word = string_range(text, start_index, j);
+
+            bool is_stopword = false;
+            for_slice (String *, stopword, stopwords) {
+                if (!string_equal(word, *stopword)) continue;
+                stopword_removal_count += 1;
+                is_stopword = true;
+                break;
+            }
+            if (is_stopword) continue;
+
+            String to_push = string_range(text, start_index_including_whitespace, j);
+            array_push_slice_assume_capacity(&text_no_stopwords, &to_push);
+        }
+        document.text = bit_cast(String) text_no_stopwords;
+
         array_push(&documents, &document);
     }
-
-    for_slice (Document *, document, documents) {
-        print("Document [%]: %\n", fmt(String, document->label), fmt(String, document->text));
-    }
+    print("[info] Removed % non-ASCII characters and % stopwords\n", fmt(usize, character_removal_count), fmt(usize, stopword_removal_count));
 
     arena_deinit(&arena);
     exit(0);

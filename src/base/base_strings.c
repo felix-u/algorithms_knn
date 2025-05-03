@@ -14,7 +14,7 @@ static usize int_from_string_base(String s, usize base) {
 
 static bool string_equal(String s1, String s2) {
     if (s1.count != s2.count) return false;
-    return memcmp(s1.data, s2.data, s1.count) == 0;
+    return memcmp_(s1.data, s2.data, s1.count) == 0;
 }
 
 static String string_from_cstring(char *s) {

@@ -64,8 +64,10 @@ static inline int memcmp_(void *a_, void *b_, usize byte_count) {
 
 static inline void *memcpy_(void *destination_, void *source_, usize byte_count) {
     u8 *destination = destination_, *source = source_;
-    assert(destination != 0);
-    assert(source != 0);
+    if (byte_count != 0) {
+        assert(destination != 0);
+        assert(source != 0);
+    }
     for (usize i = 0; i < byte_count; i += 1) destination[i] = source[i];
     return destination;
 }

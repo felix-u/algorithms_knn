@@ -177,9 +177,9 @@ static void print(char *format, ...) {
 }
 
 static void print_var_args(char *format, va_list args) {
-    // TODO(felix); might be a nicer way to do this
+    // TODO(felix): this should use the thread_local arena once we add that system
     static Arena arena = {0};
-    if (arena.mem == 0) arena = arena_init(2048);
+    if (arena.mem == 0) arena = arena_init(8096);
 
     Arena_Temp temp = arena_temp_begin(&arena);
 
