@@ -42,7 +42,13 @@ void entrypoint(void) {
     if (corpus.count == 0) exit(1);
     print("[info] Read %kB from '%'\n", fmt(usize, corpus.count / 1024), fmt(String, path_to_corpus));
 
-    structdef(Document) { String label, text; Slice_String words; };
+    typedef Array(u16) Array_u16;
+    structdef(Document) {
+        String label, text;
+        Slice_String words;
+        Array_u16 word_vector;
+    };
+
     Array_Document documents = { .arena = &arena };
     usize character_removal_count = 0;
     usize stopword_removal_count = 0;
@@ -130,9 +136,9 @@ void entrypoint(void) {
     }
     print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
 
-    Array_Word_Frequency frequencies = { .arena = &arena };
+    Array_Word_Frequency vocabulary = { .arena = &arena };
     usize vocabulary_size = 5000;
-    array_ensure_capacity(&frequencies, vocabulary_size);
+    array_ensure_capacity(&vocabulary, vocabulary_size);
 
     for (usize i = 0; i < vocabulary_size; i += 1) {
         Word_Frequency *best = 0;
@@ -143,9 +149,28 @@ void entrypoint(void) {
             }
         }
         if (best == 0) break;
-        array_push_assume_capacity(&frequencies, best);
+
+        array_push_assume_capacity(&vocabulary, best);
         best->count = 0;
     }
+    print("[info] Computed vocabulary of top % most-used words\n", fmt(usize, vocabulary_size));
+
+    for_slice (Document *, document, documents) {
+        document->word_vector.arena = &arena;
+        array_ensure_capacity(&document->word_vector, vocabulary_size + 1);
+        for_slice (String *, word, document->words) {
+            bool unknown = true;
+            for (usize i = 0; i < vocabulary.count; i += 1) {
+                String vocabulary_word = *vocabulary.data[i].word;
+                if (!string_equal(*word, vocabulary_word)) continue;
+                document->word_vector.data[i] += 1;
+                unknown = false;
+                break;
+            }
+            if (unknown) document->word_vector.data[vocabulary_size] += 1;
+        }
+    }
+    print("[info] Computed word vectors for all % documents\n", fmt(usize, documents.count));
 
     arena_deinit(&arena);
     exit(0);
