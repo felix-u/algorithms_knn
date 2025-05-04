@@ -1,3 +1,5 @@
+// TODO(felix): square root, etc. via intrinsics, not math.h (avoid linking UCRT)
+
 uniondef(V2) {
     struct { f32 x, y; };
     struct { f32 u, v; };

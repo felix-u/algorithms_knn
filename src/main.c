@@ -47,6 +47,7 @@ void entrypoint(void) {
         String label, text;
         Slice_String words;
         Array_u16 word_vector;
+        f64 word_vector_length;
     };
 
     Array_Document documents = { .arena = &arena };
@@ -158,6 +159,8 @@ void entrypoint(void) {
     for_slice (Document *, document, documents) {
         document->word_vector.arena = &arena;
         array_ensure_capacity(&document->word_vector, vocabulary_size + 1);
+        document->word_vector.count = vocabulary_size + 1;
+
         for_slice (String *, word, document->words) {
             bool unknown = true;
             for (usize i = 0; i < vocabulary.count; i += 1) {
@@ -171,6 +174,16 @@ void entrypoint(void) {
         }
     }
     print("[info] Computed word vectors for all % documents\n", fmt(usize, documents.count));
+
+    for_slice (Document *, document, documents) {
+        f64 sum_of_squares = 0;
+        for_slice (u16 *, frequency, document->word_vector) {
+            f64 value = (f64)*frequency;
+            sum_of_squares += value;
+        }
+        document->word_vector_length = sqrt(sum_of_squares);
+    }
+    print("[info] Computed word vector lengths for all % documents\n", fmt(usize, documents.count));
 
     for (usize i = 0; i < documents.count; i += 1) {
         String bytes = documents.data[i].text;
