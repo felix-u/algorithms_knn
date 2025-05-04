@@ -172,6 +172,18 @@ void entrypoint(void) {
     }
     print("[info] Computed word vectors for all % documents\n", fmt(usize, documents.count));
 
+    usize category_count = 4;
+    for (usize category_index = 0; category_index < category_count; category_index += 1) {
+        usize category_document_count = documents.count / category_count;
+        usize category_start_index = category_document_count * category_index;
+        for (usize i = category_start_index; i < category_start_index + category_document_count; i += 1) {
+            String bytes = documents.data[i].text;
+            usize random_index_from_hash = category_start_index + compute_hash(bytes, category_document_count);
+            swap(Document, &documents.data[i], &documents.data[random_index_from_hash]);
+        }
+    }
+    print("[info] Shuffled documents per-category, using hashes as source of randomness\n");
+
     arena_deinit(&arena);
     exit(0);
 }
