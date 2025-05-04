@@ -193,7 +193,7 @@ typedef Array_u8 String_Builder;
 #define slice_from_c_array(c_array) { .data = c_array, .count = array_count(c_array) }
 #define slice_get_last_assume_not_empty(s) ((s).data[(s).count - 1])
 #define slice_pop_assume_not_empty(slice) (slice).data[--(slice).count]
-#define slice_range(slice, beg, end) { .data = (void *)((uptr)(slice).data + (beg)), .count = (end) - (beg) }
+#define slice_range(slice, beg, end) { .data = (slice).data + (beg), .count = (end) - (beg) }
 #define slice_swap_remove(slice_pointer, idx) (slice_pointer)->data[idx] = (slice_pointer)->data[--(slice_pointer)->count]
 #define slice_as_bytes(slice) (String){ .data = (u8 *)(slice).data, .count = sizeof(*((slice).data)) * (slice).count }
 
@@ -249,8 +249,11 @@ static void array_push_slice_explicit_item_size_assume_capacity(Array_void *arra
 
 // TODO(felix): rename/replace
 static inline int memcmp_(void *a_, void *b_, usize byte_count);
-static inline void *memcpy_(void *destination_, void *source_, usize byte_count);
-#if COMPILER_MSVC
+#if OS_WINDOWS
+    #pragma function(memcpy)
+#endif
+void *memcpy(void *destination_, const void *source_, usize byte_count);
+#if OS_WINDOWS
     #pragma function(memset)
 #endif
 extern void *memset(void *destination_, int byte_, usize byte_count);

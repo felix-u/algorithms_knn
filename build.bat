@@ -17,7 +17,7 @@ set clang_link=-lkernel32 -lshell32 -Xlinker -entry:entrypoint -Xlinker -subsyst
 set cl_debug=%cl_common% -W4 -WX -Z7 -DBUILD_DEBUG=1
 set clang_debug=%clang_common% ^
     -Wall -Werror -Wextra -Wshadow -Wconversion -Wdouble-promotion ^
-    -Wno-unused-function -Wno-deprecated-declarations -fno-strict-aliasing ^
+    -Wno-unused-function -Wno-deprecated-declarations -Wno-unused-local-typedef -fno-strict-aliasing ^
     -g3 -fsanitize=undefined -fsanitize-trap -DBUILD_DEBUG=1
 set cl_out=-out:
 set clang_out=-o

@@ -172,17 +172,32 @@ void entrypoint(void) {
     }
     print("[info] Computed word vectors for all % documents\n", fmt(usize, documents.count));
 
-    usize category_count = 4;
-    for (usize category_index = 0; category_index < category_count; category_index += 1) {
-        usize category_document_count = documents.count / category_count;
-        usize category_start_index = category_document_count * category_index;
-        for (usize i = category_start_index; i < category_start_index + category_document_count; i += 1) {
-            String bytes = documents.data[i].text;
-            usize random_index_from_hash = category_start_index + compute_hash(bytes, category_document_count);
-            swap(Document, &documents.data[i], &documents.data[random_index_from_hash]);
-        }
+    for (usize i = 0; i < documents.count; i += 1) {
+        String bytes = documents.data[i].text;
+        usize random_index_from_hash = compute_hash(bytes, documents.count);
+        swap(Document, &documents.data[i], &documents.data[random_index_from_hash]);
     }
-    print("[info] Shuffled documents per-category, using hashes as source of randomness\n");
+    print("[info] Shuffled documents using hashes as source of randomness\n");
+
+    enum { train_id, validation_id, testing_id, split_count };
+    typedef Slice(f32) Slice_f32;
+    Slice_f32 fractions = slice_from_c_array(((f32[]){ [train_id] = 0.6f, [validation_id] = 0.2f, [testing_id] = 0.2f }));
+
+    Array_Document splits[split_count] = {0};
+    usize document_index = 0;
+    for (usize split = 0; split < split_count; split += 1) {
+        splits[split].arena = &arena;
+        usize capacity = (usize)((f32)documents.count * fractions.data[split]);
+        array_ensure_capacity(&splits[split], capacity);
+
+        Slice_Document to_push = slice_range(documents, document_index, document_index + capacity);
+        array_push_slice_assume_capacity(&splits[split], &to_push);
+
+        document_index += to_push.count;
+    }
+    print("[info] Split dataset into training (%), validation (%), and testing (%)\n",
+        fmt(usize, splits[train_id].count), fmt(usize, splits[validation_id].count), fmt(usize, splits[testing_id].count)
+    );
 
     arena_deinit(&arena);
     exit(0);

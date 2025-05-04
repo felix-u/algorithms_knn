@@ -8,7 +8,7 @@ static void array_ensure_capacity_explicit_item_size(Array_void *array, usize it
     while (new_capacity < item_count) new_capacity *= 2;
 
     u8 *new_memory = arena_make(array->arena, new_capacity, item_size);
-    if (array->count > 0) memcpy_(new_memory, array->data, array->count * item_size);
+    if (array->count > 0) memcpy(new_memory, array->data, array->count * item_size);
 
     if (!non_zero) {
         usize old_capacity = array->capacity;
@@ -30,7 +30,7 @@ static inline void array_push_explicit_item_size_assume_capacity(Array_void *arr
     usize new_len = array->count + 1;
     assert(new_len <= array->capacity);
     // TODO(felix): should this be memmove? if not, add assert to check for overlap
-    memcpy_((u8 *)array->data + (array->count * item_size), item, item_size);
+    memcpy((u8 *)array->data + (array->count * item_size), item, item_size);
     array->count = new_len;
 }
 
@@ -39,7 +39,7 @@ static void array_push_slice_explicit_item_size(Array_void *array, Slice_void *s
     usize new_len = array->count + slice->count;
     array_ensure_capacity_explicit_item_size(array, new_len, item_size, false);
     // TODO(felix): should this be memmove? if not, add assert to check for overlap
-    memcpy_((u8 *)array->data + (array->count * item_size), slice->data, slice->count * item_size);
+    memcpy((u8 *)array->data + (array->count * item_size), slice->data, slice->count * item_size);
     array->count = new_len;
 }
 
@@ -47,7 +47,7 @@ static void array_push_slice_explicit_item_size_assume_capacity(Array_void *arra
     usize new_len = array->count + slice->count;
     assert(new_len <= array->capacity);
     // TODO(felix): should this be memmove? if not, add assert to check for overlap
-    memcpy_((u8 *)array->data + (array->count * item_size), slice->data, slice->count * item_size);
+    memcpy((u8 *)array->data + (array->count * item_size), slice->data, slice->count * item_size);
     array->count = new_len;
 }
 
@@ -62,8 +62,9 @@ static inline int memcmp_(void *a_, void *b_, usize byte_count) {
     return 0;
 }
 
-static inline void *memcpy_(void *destination_, void *source_, usize byte_count) {
-    u8 *destination = destination_, *source = source_;
+void *memcpy(void *destination_, const void *source_, usize byte_count) {
+    u8 *destination = destination_;
+    const u8 *source = source_;
     if (byte_count != 0) {
         assert(destination != 0);
         assert(source != 0);
