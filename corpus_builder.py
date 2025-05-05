@@ -3,7 +3,7 @@ import feedparser
 # change these
 output_path = "corpus_train.txt"
 categories = ["cs.AI", "q-bio.BM", "physics.optics", "cs.LG"]
-abstracts_per_category = 250
+abstracts_per_category = 800
 
 def fetch_arxiv_abstracts(categories, abstracts_per_category):
     entries = []

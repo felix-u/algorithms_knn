@@ -26,8 +26,84 @@ static inline usize compute_hash(String bytes, usize capacity) {
     return value;
 }
 
+typedef Array(u16) Array_u16;
+structdef(Document) {
+    String label, text;
+    Slice_String words;
+    Array_u16 word_vector;
+    f64 word_vector_length;
+};
+
+typedef Array(f64) Array_f64;
+static inline Array_f64 compute_similarities(Arena *arena, Document query, Array_Document comparison_set) {
+    Array_f64 similarities = { .arena = arena };
+    array_ensure_capacity(&similarities, comparison_set.count);
+    for_slice (Document *, sample, comparison_set) {
+        f64 dot_product = 0;
+        for (usize i = 0; i < sample->word_vector.count; i += 1) {
+            f64 query_feature = (f64)query.word_vector.data[i];
+            f64 sample_feature = (f64)sample->word_vector.data[i];
+            dot_product += query_feature * sample_feature;
+        }
+
+        f64 cosine_similarity = dot_product / (query.word_vector_length * sample->word_vector_length);
+        array_push_assume_capacity(&similarities, &cosine_similarity);
+    }
+    return similarities;
+}
+
+static inline String compute_guess(Arena *arena, usize k, Array_f64 similarities, Array_Document comparison_set) {
+    Array_Document training_set = comparison_set;
+
+    Array_Document k_nearest = { .arena = arena };
+    array_ensure_capacity(&k_nearest, k);
+
+    while (k_nearest.count < k) {
+        usize max_i = 0;
+        for (usize i = 0; i < similarities.count; i += 1) {
+            if (similarities.data[i] <= similarities.data[max_i]) continue;
+            max_i = i;
+        }
+        Document *most_similar = &training_set.data[max_i];
+        array_push_assume_capacity(&k_nearest, most_similar);
+        similarities.data[max_i] = 0;
+    }
+
+    structdef(Guess) { String label; usize count; };
+    Array_Guess guesses = { .arena = arena };
+    array_ensure_capacity(&guesses, k);
+
+    for_slice (Document *, neighbour, k_nearest) {
+        Guess *existing_guess = 0;
+        for_slice (Guess *, previous_guess, guesses) {
+            if (!string_equal(previous_guess->label, neighbour->label)) continue;
+            existing_guess = previous_guess;
+            break;
+        }
+
+        if (existing_guess != 0) {
+            existing_guess->count += 1;
+        } else {
+            Guess new_guess = { .label = neighbour->label, .count = 1 };
+            array_push_assume_capacity(&guesses, &new_guess);
+        }
+    }
+
+    #if BUILD_DEBUG
+        usize count = 0;
+        for_slice (Guess *, guess, guesses) count += guess->count;
+        assert(count == k);
+    #endif
+
+    Guess winning_guess = {0};
+    for_slice (Guess *, guess, guesses) {
+        if (guess->count > winning_guess.count) winning_guess = *guess;
+    }
+    return winning_guess.label;
+}
+
 void entrypoint(void) {
-    Arena arena = arena_init(64 * 1024 * 1024);
+    Arena arena = arena_init(512 * 1024 * 1024);
     Slice_String arguments = os_get_arguments(&arena);
 
     if (arguments.count != 2) {
@@ -41,14 +117,6 @@ void entrypoint(void) {
     String corpus = file_read_bytes_relative_path(&arena, cstring_from_string(&arena, path_to_corpus), UINT32_MAX);
     if (corpus.count == 0) exit(1);
     print("[info] Read %kB from '%'\n", fmt(usize, corpus.count / 1024), fmt(String, path_to_corpus));
-
-    typedef Array(u16) Array_u16;
-    structdef(Document) {
-        String label, text;
-        Slice_String words;
-        Array_u16 word_vector;
-        f64 word_vector_length;
-    };
 
     Array_Document documents = { .arena = &arena };
     usize character_removal_count = 0;
@@ -215,6 +283,7 @@ void entrypoint(void) {
 
     Array_Document training_set = splits[train_id];
     Array_Document validation_set = splits[validation_id];
+    Array_Document testing_set = splits[testing_id];
 
     typedef Slice(usize) Slice_usize;
     Slice_usize k_values = slice_of(usize, 1, 3, 5, 7, 9);
@@ -230,68 +299,11 @@ void entrypoint(void) {
     }
 
     for_slice (Document *, query, validation_set) {
-        typedef Array(f64) Array_f64;
-        Array_f64 similarities = { .arena = &arena };
-        array_ensure_capacity(&similarities, training_set.count);
-        for_slice (Document *, sample, training_set) {
-            f64 dot_product = 0;
-            for (usize i = 0; i < sample->word_vector.count; i += 1) {
-                f64 query_feature = (f64)query->word_vector.data[i];
-                f64 sample_feature = (f64)sample->word_vector.data[i];
-                dot_product += query_feature * sample_feature;
-            }
-
-            f64 cosine_similarity = dot_product / (query->word_vector_length * sample->word_vector_length);
-            array_push_assume_capacity(&similarities, &cosine_similarity);
-        }
-
+        Array_f64 similarities = compute_similarities(&arena, *query, training_set);
         for (usize k_index = 0; k_index < k_values.count; k_index += 1) {
             usize k = k_values.data[k_index];
-            Array_Document k_nearest = { .arena = &arena };
-            array_ensure_capacity(&k_nearest, k);
-
-            while (k_nearest.count < k) {
-                usize max_i = 0;
-                for (usize i = 0; i < similarities.count; i += 1) {
-                    if (similarities.data[i] <= similarities.data[max_i]) continue;
-                    max_i = i;
-                }
-                Document *most_similar = &training_set.data[max_i];
-                array_push_assume_capacity(&k_nearest, most_similar);
-                similarities.data[max_i] = 0;
-            }
-
-            structdef(Guess) { String label; usize count; };
-            Array_Guess guesses = { .arena = &arena };
-            array_ensure_capacity(&guesses, k);
-
-            for_slice (Document *, neighbour, k_nearest) {
-                Guess *existing_guess = 0;
-                for_slice (Guess *, previous_guess, guesses) {
-                    if (!string_equal(previous_guess->label, neighbour->label)) continue;
-                    existing_guess = previous_guess;
-                    break;
-                }
-
-                if (existing_guess != 0) {
-                    existing_guess->count += 1;
-                } else {
-                    Guess new_guess = { .label = neighbour->label, .count = 1 };
-                    array_push_assume_capacity(&guesses, &new_guess);
-                }
-            }
-
-            #if BUILD_DEBUG
-                usize count = 0;
-                for_slice (Guess *, guess, guesses) count += guess->count;
-                assert(count == k);
-            #endif
-
-            Guess winning_guess = {0};
-            for_slice (Guess *, guess, guesses) {
-                if (guess->count > winning_guess.count) winning_guess = *guess;
-            }
-            array_push_assume_capacity(&validation_guesses_per_k.data[k_index], &winning_guess.label);
+            String guess = compute_guess(&arena, k, similarities, training_set);
+            array_push_assume_capacity(&validation_guesses_per_k.data[k_index], &guess);
         }
     }
 
@@ -316,12 +328,30 @@ void entrypoint(void) {
         }
 
         f32 percentage = (f32)correct_guess_count / (f32)validation_guesses.count * 100.f;
-        print("[info] k = % had accuracy %%\n", fmt(usize, k), fmt(f32, percentage), fmt(char, '%'));
+        print("[info] (validation) k = % had accuracy %%\n", fmt(usize, k), fmt(f32, percentage), fmt(char, '%'));
     }
-
     usize best_k = k_values.data[best_k_index];
-    f32 best_k_accuracy_percentage = (f32)max_correct_guess_count / (f32)validation_set.count * 100.f;
-    print("[info] Choosing k = % because it has the greatest accuracy (%%)\n", fmt(usize, best_k), fmt(f32, best_k_accuracy_percentage), fmt(char, '%'));
+    print("[info] Choosing k = %\n", fmt(usize, best_k));
+
+    {
+        Array_String testing_guesses = { .arena = &arena };
+        array_ensure_capacity(&testing_guesses, testing_set.count);
+        for_slice (Document *, query, testing_set) {
+            Array_f64 similarities = compute_similarities(&arena, *query, training_set);
+            usize k = best_k;
+            String guess = compute_guess(&arena, k, similarities, training_set);
+            array_push_assume_capacity(&testing_guesses, &guess);
+        }
+
+        usize correct_guess_count = 0;
+        for (usize i = 0; i < testing_guesses.count; i += 1) {
+            String testing_label = testing_set.data[i].label;
+            String guess_label = testing_guesses.data[i];
+            correct_guess_count += string_equal(testing_label, guess_label);
+        }
+        f32 percentage = (f32)correct_guess_count / (f32)testing_guesses.count * 100.f;
+        print("[info] (testing) k = % had accuracy %%\n", fmt(usize, best_k), fmt(f32, percentage), fmt(char, '%'));
+    }
 
     arena_deinit(&arena);
     exit(0);
