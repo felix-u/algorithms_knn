@@ -137,6 +137,7 @@ void entrypoint(void) {
     }
     print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
 
+    // TODO(felix): should have indexed hashmap (w/ ordering option) in base layer!
     Array_Word_Frequency vocabulary = { .arena = &arena };
     usize vocabulary_size = 5000;
     array_ensure_capacity(&vocabulary, vocabulary_size);
@@ -179,7 +180,7 @@ void entrypoint(void) {
         f64 sum_of_squares = 0;
         for_slice (u16 *, frequency, document->word_vector) {
             f64 value = (f64)*frequency;
-            sum_of_squares += value;
+            sum_of_squares += value * value;
         }
         document->word_vector_length = sqrt(sum_of_squares);
     }
@@ -211,6 +212,43 @@ void entrypoint(void) {
     print("[info] Split dataset into training (%), validation (%), and testing (%)\n",
         fmt(usize, splits[train_id].count), fmt(usize, splits[validation_id].count), fmt(usize, splits[testing_id].count)
     );
+
+    Array_Document training_set = splits[train_id];
+    Array_Document validation_set = splits[validation_id];
+    // usize k = 5;
+
+    for_slice (Document *, query, validation_set) {
+        Arena_Temp temp = arena_temp_begin(&arena);
+
+        typedef Array(f64) Array_f64;
+        Array_f64 similarities = { .arena = &arena };
+        array_ensure_capacity(&similarities, training_set.count);
+        for_slice (Document *, sample, training_set) {
+            f64 dot_product = 0;
+            for (usize i = 0; i < sample->word_vector.count; i += 1) {
+                f64 query_feature = (f64)query->word_vector.data[i];
+                f64 sample_feature = (f64)sample->word_vector.data[i];
+                dot_product += query_feature * sample_feature;
+            }
+
+            f64 cosine_similarity = dot_product / (query->word_vector_length * sample->word_vector_length);
+            array_push_assume_capacity(&similarities, &cosine_similarity);
+        }
+
+        f64 max_similarity = 0;
+        usize max_i = 0;
+        for (usize i = 0; i < similarities.count; i += 1) {
+            if (similarities.data[i] <= max_similarity) continue;
+            max_similarity = similarities.data[i];
+            max_i = i;
+        }
+
+        // TODO(felix): remove
+        Document most_similar = training_set.data[max_i];
+        print("% matches % with % certainty\n", fmt(String, query->label), fmt(String, most_similar.label), fmt(f64, max_similarity));
+
+        arena_temp_end(temp);
+    }
 
     arena_deinit(&arena);
     exit(0);

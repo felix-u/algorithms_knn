@@ -12,9 +12,9 @@ target:
 /// recent_files //////////////////////////////////////////////////////////////
 
 recent_file: "src/base/base_core.c"
-recent_file: "src/base/base_strings.c"
-recent_file: "src/base/base_io.c"
 recent_file: "src/base/base_arena.c"
+recent_file: "src/base/base_io.c"
+recent_file: "src/base/base_strings.c"
 recent_file: "src/main.c"
 
 /// exception code filters ////////////////////////////////////////////////////
