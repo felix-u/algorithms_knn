@@ -262,12 +262,12 @@ void entrypoint(void) {
             }
 
             structdef(Guess) { String label; usize count; };
-            Array_Guess k_guesses = { .arena = &arena };
-            array_ensure_capacity(&k_guesses, k);
+            Array_Guess guesses = { .arena = &arena };
+            array_ensure_capacity(&guesses, k);
 
             for_slice (Document *, neighbour, k_nearest) {
                 Guess *existing_guess = 0;
-                for_slice (Guess *, previous_guess, k_guesses) {
+                for_slice (Guess *, previous_guess, guesses) {
                     if (!string_equal(previous_guess->label, neighbour->label)) continue;
                     existing_guess = previous_guess;
                     break;
@@ -277,18 +277,18 @@ void entrypoint(void) {
                     existing_guess->count += 1;
                 } else {
                     Guess new_guess = { .label = neighbour->label, .count = 1 };
-                    array_push_assume_capacity(&k_guesses, &new_guess);
+                    array_push_assume_capacity(&guesses, &new_guess);
                 }
             }
 
             #if BUILD_DEBUG
                 usize count = 0;
-                for_slice (Guess *, guess, k_guesses) count += guess->count;
+                for_slice (Guess *, guess, guesses) count += guess->count;
                 assert(count == k);
             #endif
 
             Guess winning_guess = {0};
-            for_slice (Guess *, guess, k_guesses) {
+            for_slice (Guess *, guess, guesses) {
                 if (guess->count > winning_guess.count) winning_guess = *guess;
             }
             array_push_assume_capacity(&validation_guesses_per_k.data[k_index], &winning_guess.label);
@@ -322,19 +322,6 @@ void entrypoint(void) {
     usize best_k = k_values.data[best_k_index];
     f32 best_k_accuracy_percentage = (f32)max_correct_guess_count / (f32)validation_set.count * 100.f;
     print("[info] Choosing k = % because it has the greatest accuracy (%%)\n", fmt(usize, best_k), fmt(f32, best_k_accuracy_percentage), fmt(char, '%'));
-
-    for (usize k_index = 0; k_index + 1 < k_values.count; k_index += 1) {
-        bool is_some_difference_with_next_k = false;
-        Array_String guesses = validation_guesses_per_k.data[k_index];
-        Array_String next_guesses = validation_guesses_per_k.data[k_index + 1];
-        assert(guesses.count == next_guesses.count);
-        for (usize i = 0; i < guesses.count; i += 1) {
-            if (string_equal(guesses.data[i], next_guesses.data[i])) continue;
-            is_some_difference_with_next_k = true;
-            break;
-        }
-        assert(is_some_difference_with_next_k);
-    }
 
     arena_deinit(&arena);
     exit(0);
