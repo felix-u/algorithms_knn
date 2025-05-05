@@ -1,9 +1,9 @@
 import feedparser
 
 # change these
-output_path = "corpus_train.txt"
-categories = ["cs.AI", "q-bio.BM", "physics.optics", "cs.LG"]
-abstracts_per_category = 800
+output_path = "corpora/arxiv"
+categories = ["cs.AI", "q-bio.BM", "physics.optics", "astro-ph.GA"]
+abstracts_per_category = [ 200, 250, 400, 800, 1000 ]
 
 def fetch_arxiv_abstracts(categories, abstracts_per_category):
     entries = []
@@ -21,7 +21,10 @@ def fetch_arxiv_abstracts(categories, abstracts_per_category):
             entries.append((label, abstract))
     return entries
 
-data = fetch_arxiv_abstracts(categories, abstracts_per_category)
-with open(output_path, "w", encoding="utf-8") as file:
-    for label, abstract in data:
-        file.write(f"{label}:{abstract}\n")
+for count in abstracts_per_category:
+    data = fetch_arxiv_abstracts(categories, count)
+    path = f"{output_path}/raw_{count}.txt"
+    with open(path, "w", encoding="utf-8") as file:
+        for label, abstract in data:
+            file.write(f"{label}:{abstract}\n")
+    print(f"wrote {count} abstracts to '{path}'")
