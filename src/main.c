@@ -62,7 +62,7 @@ void entrypoint(void) {
         i += 1;
 
         start_index = i;
-        while (i < corpus.count && corpus.data[i] != '\r' && corpus.data[i] != '\n') i += 1;
+        while (i < corpus.count && corpus.data[i] != '\n') i += 1;
         String abstract = string_range(corpus, start_index, i);
 
         Array_u8 abstract_ascii_lowercase = { .arena = &arena };
@@ -215,11 +215,21 @@ void entrypoint(void) {
 
     Array_Document training_set = splits[train_id];
     Array_Document validation_set = splits[validation_id];
-    // usize k = 5;
+
+    typedef Slice(usize) Slice_usize;
+    Slice_usize k_values = slice_of(usize, 1, 3, 5, 7, 9);
+
+    typedef Array(Array_String) Array_Array_String;
+    Array_Array_String validation_guesses_per_k = { .arena = &arena };
+    array_ensure_capacity(&validation_guesses_per_k, k_values.count);
+    validation_guesses_per_k.count = k_values.count;
+
+    for_slice(Array_String *, validation_guesses, validation_guesses_per_k) {
+        validation_guesses->arena = &arena;
+        array_ensure_capacity(validation_guesses, validation_set.count);
+    }
 
     for_slice (Document *, query, validation_set) {
-        Arena_Temp temp = arena_temp_begin(&arena);
-
         typedef Array(f64) Array_f64;
         Array_f64 similarities = { .arena = &arena };
         array_ensure_capacity(&similarities, training_set.count);
@@ -235,19 +245,82 @@ void entrypoint(void) {
             array_push_assume_capacity(&similarities, &cosine_similarity);
         }
 
-        f64 max_similarity = 0;
-        usize max_i = 0;
-        for (usize i = 0; i < similarities.count; i += 1) {
-            if (similarities.data[i] <= max_similarity) continue;
-            max_similarity = similarities.data[i];
-            max_i = i;
+        for (usize k_index = 0; k_index < k_values.count; k_index += 1) {
+            usize k = k_values.data[k_index];
+            Array_Document k_nearest = { .arena = &arena };
+            array_ensure_capacity(&k_nearest, k);
+
+            while (k_nearest.count < k) {
+                usize max_i = 0;
+                for (usize i = 0; i < similarities.count; i += 1) {
+                    if (similarities.data[i] <= similarities.data[max_i]) continue;
+                    max_i = i;
+                }
+                Document *most_similar = &training_set.data[max_i];
+                array_push_assume_capacity(&k_nearest, most_similar);
+                similarities.data[max_i] = 0;
+            }
+
+            structdef(Guess) { String label; usize count; };
+            Array_Guess k_guesses = { .arena = &arena };
+            array_ensure_capacity(&k_guesses, k);
+
+            for_slice (Document *, neighbour, k_nearest) {
+                Guess *existing_guess = 0;
+                for_slice (Guess *, previous_guess, k_guesses) {
+                    if (!string_equal(previous_guess->label, neighbour->label)) continue;
+                    existing_guess = previous_guess;
+                    break;
+                }
+
+                if (existing_guess != 0) {
+                    existing_guess->count += 1;
+                } else {
+                    Guess new_guess = { .label = neighbour->label, .count = 1 };
+                    array_push_assume_capacity(&k_guesses, &new_guess);
+                }
+            }
+
+            #if BUILD_DEBUG
+                usize count = 0;
+                for_slice (Guess *, guess, k_guesses) count += guess->count;
+                assert(count == k);
+            #endif
+
+            Guess winning_guess = {0};
+            for_slice (Guess *, guess, k_guesses) {
+                if (guess->count > winning_guess.count) winning_guess = *guess;
+            }
+            array_push_assume_capacity(&validation_guesses_per_k.data[k_index], &winning_guess.label);
         }
+    }
 
-        // TODO(felix): remove
-        Document most_similar = training_set.data[max_i];
-        print("% matches % with % certainty\n", fmt(String, query->label), fmt(String, most_similar.label), fmt(f64, max_similarity));
+    for (usize k_index = 0; k_index < k_values.count; k_index += 1) {
+        Array_String validation_guesses = validation_guesses_per_k.data[k_index];
+        usize k = k_values.data[k_index];
 
-        arena_temp_end(temp);
+        usize correct_guess_count = 0;
+        assert(validation_guesses.count == validation_set.count);
+        for (usize i = 0; i < validation_guesses.count; i += 1) {
+            String validation_label = validation_set.data[i].label;
+            String guess_label = validation_guesses.data[i];
+            correct_guess_count += string_equal(validation_label, guess_label);
+        }
+        f32 percentage = (f32)correct_guess_count / (f32)validation_guesses.count * 100.f;
+        print("[info] k = % had accuracy %%\n", fmt(usize, k), fmt(f32, percentage), fmt(char, '%'));
+    }
+
+    for (usize k_index = 0; k_index + 1 < k_values.count; k_index += 1) {
+        bool is_some_difference_with_next_k = false;
+        Array_String guesses = validation_guesses_per_k.data[k_index];
+        Array_String next_guesses = validation_guesses_per_k.data[k_index + 1];
+        assert(guesses.count == next_guesses.count);
+        for (usize i = 0; i < guesses.count; i += 1) {
+            if (string_equal(guesses.data[i], next_guesses.data[i])) continue;
+            is_some_difference_with_next_k = true;
+            break;
+        }
+        assert(is_some_difference_with_next_k);
     }
 
     arena_deinit(&arena);

@@ -191,6 +191,7 @@ typedef Array_u8 String_Builder;
 
 // TODO(felix): a number of these would benefit from assert-as-expression using comma operator
 #define slice_from_c_array(c_array) { .data = c_array, .count = array_count(c_array) }
+#define slice_of(type, ...) slice_from_c_array(((type[]){ __VA_ARGS__ }))
 #define slice_get_last_assume_not_empty(s) ((s).data[(s).count - 1])
 #define slice_pop_assume_not_empty(slice) (slice).data[--(slice).count]
 #define slice_range(slice, beg, end) { .data = (slice).data + (beg), .count = (end) - (beg) }
