@@ -295,6 +295,9 @@ void entrypoint(void) {
         }
     }
 
+    usize best_k_index = 0;
+    usize max_correct_guess_count = 0;
+
     for (usize k_index = 0; k_index < k_values.count; k_index += 1) {
         Array_String validation_guesses = validation_guesses_per_k.data[k_index];
         usize k = k_values.data[k_index];
@@ -306,9 +309,19 @@ void entrypoint(void) {
             String guess_label = validation_guesses.data[i];
             correct_guess_count += string_equal(validation_label, guess_label);
         }
+
+        if (correct_guess_count > max_correct_guess_count) {
+            best_k_index = k_index;
+            max_correct_guess_count = correct_guess_count;
+        }
+
         f32 percentage = (f32)correct_guess_count / (f32)validation_guesses.count * 100.f;
         print("[info] k = % had accuracy %%\n", fmt(usize, k), fmt(f32, percentage), fmt(char, '%'));
     }
+
+    usize best_k = k_values.data[best_k_index];
+    f32 best_k_accuracy_percentage = (f32)max_correct_guess_count / (f32)validation_set.count * 100.f;
+    print("[info] Choosing k = % because it has the greatest accuracy (%%)\n", fmt(usize, best_k), fmt(f32, best_k_accuracy_percentage), fmt(char, '%'));
 
     for (usize k_index = 0; k_index + 1 < k_values.count; k_index += 1) {
         bool is_some_difference_with_next_k = false;
