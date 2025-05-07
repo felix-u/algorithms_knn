@@ -104,38 +104,3 @@ static Map_Get map_get_argument_struct(Map_Get_Arguments arguments) {
     Map_Get result = { .index = slot->item_index, .item = item };
     return result;
 }
-
-// static void map_put(Map *map, String key, void *new_item) {
-//     assert(key.count != 0);
-
-//     usize hash = hash_function_djb2(key, map->items.capacity);
-//     Map_Slot *slot = &map->slots.data[hash];
-
-//     for (;;) {
-//         bool empty = slot->item_index == 0;
-//         if (empty) {
-//             *slot = (Map_Slot){ .item_index = (Map_Index)map->items.count };
-//             array_push_explicit_item_size_assume_capacity(&map->items, new_item, map->item_size_bytes);
-//             map->key_from_item_index.data[slot->item_index] = key;
-//         }
-
-//         String key_at_index = map->key_from_item_index.data[slot->item_index];
-//         assert(key_at_index.count != 0);
-//         if (string_equal(key, key_at_index)) {
-//             void *existing_item = (u8 *)map->items.data + (slot->item_index * map->item_size_bytes);
-//             memcpy(existing_item, new_item, map->item_size_bytes);
-//             return;
-//         }
-
-//         bool create_new_slot = slot->next_slot_index == 0;
-//         if (create_new_slot) {
-//             Map_Index new_slot_index = (Map_Index)map->slots.count;
-//             Map_Slot new_slot = {0};
-//             array_push(&map->slots, &new_slot);
-//             slot->next_slot_index = new_slot_index;
-//         }
-
-//         slot = &map->slots.data[slot->next_slot_index];
-//     }
-
-// }
