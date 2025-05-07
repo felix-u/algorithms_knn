@@ -50,33 +50,49 @@ static Map map_create_explicit_item_size(Arena *arena, usize capacity, usize ite
     return map;
 }
 
-static void *map_get_or_put(Map *map, String key, void *new_item) {
+structdef(Map_Get_Arguments) {
+    Map *map;
+    String key;
+    void *or_put;
+    bool or_new;
+};
+
+structdef(Map_Get) { Map_Index index; void *item; };
+
+#define map_get(...) map_get_argument_struct((Map_Get_Arguments){ __VA_ARGS__ })
+static Map_Get map_get_argument_struct(Map_Get_Arguments arguments) {
+    Map *map = arguments.map;
+    String key = arguments.key;
+
+    assert(key.count != 0);
+    assert(!(arguments.or_new && arguments.or_put != 0));
+
     usize hash = hash_function_djb2(key, map->items.capacity);
     Map_Slot *slot = &map->slots.data[hash];
 
     for (;;) {
         bool empty = slot->item_index == 0;
         if (empty) {
-            *slot = (Map_Slot){ .item_index = (Map_Index)map->items.count };
-            // assert(slot->next_slot_index == 0);
-            // slot->item_index = (Map_Index)map->items.count;
-            array_push_explicit_item_size_assume_capacity(&map->items, new_item, map->item_size_bytes);
-            map->key_from_item_index.data[slot->item_index] = key;
+            if (arguments.or_put == 0 && arguments.or_new == false) return (Map_Get){ .item = map->items.data };
+
+            if (arguments.or_new) {
+                *slot = (Map_Slot){ .item_index = (Map_Index)map->items.count };
+                array_push_explicit_item_size_assume_capacity(&map->items, arguments.or_put, map->item_size_bytes);
+                map->key_from_item_index.data[slot->item_index] = key;
+            }
+
             break;
         }
 
         String key_at_index = map->key_from_item_index.data[slot->item_index];
-        assert(key.count != 0);
         assert(key_at_index.count != 0);
         if (string_equal(key, key_at_index)) break;
 
         bool create_new_slot = slot->next_slot_index == 0;
         if (create_new_slot) {
             Map_Index new_slot_index = (Map_Index)map->slots.count;
-
             Map_Slot new_slot = {0};
             array_push(&map->slots, &new_slot);
-
             slot->next_slot_index = new_slot_index;
         }
 
@@ -85,5 +101,41 @@ static void *map_get_or_put(Map *map, String key, void *new_item) {
 
     assert(slot->item_index < map->items.count);
     void *item = (u8 *)map->items.data + (slot->item_index * map->item_size_bytes);
-    return item;
+    Map_Get result = { .index = slot->item_index, .item = item };
+    return result;
 }
+
+// static void map_put(Map *map, String key, void *new_item) {
+//     assert(key.count != 0);
+
+//     usize hash = hash_function_djb2(key, map->items.capacity);
+//     Map_Slot *slot = &map->slots.data[hash];
+
+//     for (;;) {
+//         bool empty = slot->item_index == 0;
+//         if (empty) {
+//             *slot = (Map_Slot){ .item_index = (Map_Index)map->items.count };
+//             array_push_explicit_item_size_assume_capacity(&map->items, new_item, map->item_size_bytes);
+//             map->key_from_item_index.data[slot->item_index] = key;
+//         }
+
+//         String key_at_index = map->key_from_item_index.data[slot->item_index];
+//         assert(key_at_index.count != 0);
+//         if (string_equal(key, key_at_index)) {
+//             void *existing_item = (u8 *)map->items.data + (slot->item_index * map->item_size_bytes);
+//             memcpy(existing_item, new_item, map->item_size_bytes);
+//             return;
+//         }
+
+//         bool create_new_slot = slot->next_slot_index == 0;
+//         if (create_new_slot) {
+//             Map_Index new_slot_index = (Map_Index)map->slots.count;
+//             Map_Slot new_slot = {0};
+//             array_push(&map->slots, &new_slot);
+//             slot->next_slot_index = new_slot_index;
+//         }
+
+//         slot = &map->slots.data[slot->next_slot_index];
+//     }
+
+// }

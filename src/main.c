@@ -176,40 +176,14 @@ void entrypoint(void) {
 
     Map word_map = map_create(&arena, total_word_count, u16);
 
-    // // TODO(felix): remove
-    // typedef Array(Hashmap_Pair *) Array_Hashmap_Pair_Pointer;
-    // Array_Hashmap_Pair_Pointer word_map = { .arena = &arena };
-    // array_ensure_capacity(&word_map, 10000);
-    // usize unique_count = 0;
-    // usize repeat_count = 0;
-
     u16 frequency_0 = 0;
     for_slice (Document *, document, documents) for_slice (String *, word, document->words) {
-        u16 *frequency = map_get_or_put(&word_map, *word, &frequency_0);
+        u16 *frequency = map_get(&word_map, *word, .or_put = &frequency_0).item;
         *frequency = (u16)(clamp_high((u32)(*frequency + 1), 0xffff));
-
-        // // TODO(felix): remove
-        // usize hash = hash_function_djb2(*word, word_map.capacity);
-        // Hashmap_Pair **pair = &word_map.data[hash];
-        // while (*pair != 0 && !string_equal(*(*pair)->frequency.word, *word)) pair = &(*pair)->next;
-        // if (*pair == 0) {
-        //     Hashmap_Pair *new_pair = arena_make(&arena, 1, sizeof(Hashmap_Pair));
-        //     *new_pair = (Hashmap_Pair) { .frequency = { .word = word, .count = 1 } };
-        //     *pair = new_pair;
-        //     unique_count += 1;
-        // } else {
-        //     repeat_count += 1;
-        //     (*pair)->frequency.count = clamp_high((*pair)->frequency.count + 1, 0xffff);
-        // }
     }
 
-    // // TODO(felix): remove
-    // print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
-
-    // TODO(felix): should have indexed hashmap (w/ ordering option) in base layer!
-    Array_String vocabulary = { .arena = &arena };
     usize vocabulary_size = 5000;
-    array_ensure_capacity(&vocabulary, vocabulary_size);
+    Map vocabulary = map_create(&arena, vocabulary_size, bool);
 
     for (usize i = 0; i < vocabulary_size; i += 1) {
         usize best_index = 0;
@@ -224,18 +198,11 @@ void entrypoint(void) {
             best_index = frequency_index;
         }
 
-        // // TODO(felix): remove
-        // for (usize j = 0; j < word_map.capacity; j += 1) {
-        //     for (Hashmap_Pair *pair = word_map.data[j]; pair != 0; pair = pair->next) {
-        //         if (best != 0 && (pair->frequency.count <= best->count)) continue;
-        //         best = &pair->frequency;
-        //     }
-        // }
-
         if (best == 0) break;
 
-        String *best_word = &word_map.key_from_item_index.data[best_index];
-        array_push_assume_capacity(&vocabulary, best_word);
+        String best_word = word_map.key_from_item_index.data[best_index];
+        bool *present = map_get(&vocabulary, best_word, .or_new = true).item;
+        *present = true;
         *best = 0;
     }
     print("[info] Computed vocabulary of top % most-used words\n", fmt(usize, vocabulary_size));
@@ -246,15 +213,10 @@ void entrypoint(void) {
         document->word_vector.count = vocabulary_size + 1;
 
         for_slice (String *, word, document->words) {
-            bool unknown = true;
-            for (usize i = 0; i < vocabulary.count; i += 1) {
-                String vocabulary_word = vocabulary.data[i];
-                if (!string_equal(*word, vocabulary_word)) continue;
-                document->word_vector.data[i] += 1;
-                unknown = false;
-                break;
-            }
+            Map_Index vocabulary_word_index = map_get(&vocabulary, *word).index;
+            bool unknown = vocabulary_word_index == 0;
             if (unknown) document->word_vector.data[vocabulary_size] += 1;
+            else document->word_vector.data[vocabulary_word_index] += 1;
         }
     }
     print("[info] Computed word vectors for all % documents\n", fmt(usize, documents.count));
