@@ -16,16 +16,6 @@
 // TODO(felix): swap out vectoriser but keep same knn. re-tune on validation, and re-run
 // TODO(felix): compute accuracy, precision/recall/F_1, fill in McNemar table
 
-// djb2 hash
-static inline usize compute_hash(String bytes, usize capacity) {
-    usize value = 5381;
-    for_slice (u8 *, byte, bytes) {
-        value = ((value << 5) + value) + *byte;
-    }
-    value %= capacity;
-    return value;
-}
-
 typedef Array(u16) Array_u16;
 structdef(Document) {
     String label, text;
@@ -151,9 +141,15 @@ void entrypoint(void) {
         for (usize j = 0; j < text.count;) {
             usize start_index_including_whitespace = j;
             while (j < text.count && ascii_is_whitespace(text.data[j])) j += 1;
+
+            bool trailing_whitespace = j == text.count;
+            if (trailing_whitespace) break;
+
             start_index = j;
             while (j < text.count && !ascii_is_whitespace(text.data[j])) j += 1;
             String word = string_range(text, start_index, j);
+
+            assert(word.count > 0);
 
             bool is_stopword = false;
             for_slice (String *, stopword, stopwords) {
@@ -175,53 +171,72 @@ void entrypoint(void) {
     }
     print("[info] Removed % non-ASCII characters and % stopwords\n", fmt(usize, character_removal_count), fmt(usize, stopword_removal_count));
 
-    structdef(Word_Frequency) { String *word; u16 count; };
+    usize total_word_count = 0;
+    for_slice (Document *, document, documents) total_word_count += document->words.count;
 
-    structdef(Hashmap_Pair) {
-        Word_Frequency frequency;
-        Hashmap_Pair *next;
-    };
+    Map word_map = map_create(&arena, total_word_count, u16);
 
-    typedef Array(Hashmap_Pair *) Array_Hashmap_Pair_Pointer;
+    // // TODO(felix): remove
+    // typedef Array(Hashmap_Pair *) Array_Hashmap_Pair_Pointer;
+    // Array_Hashmap_Pair_Pointer word_map = { .arena = &arena };
+    // array_ensure_capacity(&word_map, 10000);
+    // usize unique_count = 0;
+    // usize repeat_count = 0;
 
-    Array_Hashmap_Pair_Pointer word_map = { .arena = &arena };
-    array_ensure_capacity(&word_map, 10000);
-
-    usize unique_count = 0;
-    usize repeat_count = 0;
+    u16 frequency_0 = 0;
     for_slice (Document *, document, documents) for_slice (String *, word, document->words) {
-        usize hash = compute_hash(*word, word_map.capacity);
-        Hashmap_Pair **pair = &word_map.data[hash];
-        while (*pair != 0 && !string_equal(*(*pair)->frequency.word, *word)) pair = &(*pair)->next;
-        if (*pair == 0) {
-            Hashmap_Pair *new_pair = arena_make(&arena, 1, sizeof(Hashmap_Pair));
-            *new_pair = (Hashmap_Pair) { .frequency = { .word = word, .count = 1 } };
-            *pair = new_pair;
-            unique_count += 1;
-        } else {
-            repeat_count += 1;
-            (*pair)->frequency.count = clamp_high((*pair)->frequency.count + 1, 0xffff);
-        }
+        u16 *frequency = map_get_or_put(&word_map, *word, &frequency_0);
+        *frequency = (u16)(clamp_high((u32)(*frequency + 1), 0xffff));
+
+        // // TODO(felix): remove
+        // usize hash = hash_function_djb2(*word, word_map.capacity);
+        // Hashmap_Pair **pair = &word_map.data[hash];
+        // while (*pair != 0 && !string_equal(*(*pair)->frequency.word, *word)) pair = &(*pair)->next;
+        // if (*pair == 0) {
+        //     Hashmap_Pair *new_pair = arena_make(&arena, 1, sizeof(Hashmap_Pair));
+        //     *new_pair = (Hashmap_Pair) { .frequency = { .word = word, .count = 1 } };
+        //     *pair = new_pair;
+        //     unique_count += 1;
+        // } else {
+        //     repeat_count += 1;
+        //     (*pair)->frequency.count = clamp_high((*pair)->frequency.count + 1, 0xffff);
+        // }
     }
-    print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
+
+    // // TODO(felix): remove
+    // print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
 
     // TODO(felix): should have indexed hashmap (w/ ordering option) in base layer!
-    Array_Word_Frequency vocabulary = { .arena = &arena };
+    Array_String vocabulary = { .arena = &arena };
     usize vocabulary_size = 5000;
     array_ensure_capacity(&vocabulary, vocabulary_size);
 
     for (usize i = 0; i < vocabulary_size; i += 1) {
-        Word_Frequency *best = 0;
-        for (usize j = 0; j < word_map.capacity; j += 1) {
-            for (Hashmap_Pair *pair = word_map.data[j]; pair != 0; pair = pair->next) {
-                if (best != 0 && (pair->frequency.count <= best->count)) continue;
-                best = &pair->frequency;
-            }
+        usize best_index = 0;
+        u16 *best = 0;
+
+        typedef Slice(u16) Slice_u16;
+        Slice_u16 frequencies = bit_cast(Slice_u16) word_map.items;
+        for (usize frequency_index = 0; frequency_index < frequencies.count; frequency_index += 1) {
+            u16 *frequency = &frequencies.data[frequency_index];
+            if (best != 0 && (*frequency <= *best)) continue;
+            best = frequency;
+            best_index = frequency_index;
         }
+
+        // // TODO(felix): remove
+        // for (usize j = 0; j < word_map.capacity; j += 1) {
+        //     for (Hashmap_Pair *pair = word_map.data[j]; pair != 0; pair = pair->next) {
+        //         if (best != 0 && (pair->frequency.count <= best->count)) continue;
+        //         best = &pair->frequency;
+        //     }
+        // }
+
         if (best == 0) break;
 
-        array_push_assume_capacity(&vocabulary, best);
-        best->count = 0;
+        String *best_word = &word_map.key_from_item_index.data[best_index];
+        array_push_assume_capacity(&vocabulary, best_word);
+        *best = 0;
     }
     print("[info] Computed vocabulary of top % most-used words\n", fmt(usize, vocabulary_size));
 
@@ -233,7 +248,7 @@ void entrypoint(void) {
         for_slice (String *, word, document->words) {
             bool unknown = true;
             for (usize i = 0; i < vocabulary.count; i += 1) {
-                String vocabulary_word = *vocabulary.data[i].word;
+                String vocabulary_word = vocabulary.data[i];
                 if (!string_equal(*word, vocabulary_word)) continue;
                 document->word_vector.data[i] += 1;
                 unknown = false;
@@ -256,7 +271,7 @@ void entrypoint(void) {
 
     for (usize i = 0; i < documents.count; i += 1) {
         String bytes = documents.data[i].text;
-        usize random_index_from_hash = compute_hash(bytes, documents.count);
+        usize random_index_from_hash = hash_function_djb2(bytes, documents.count);
         swap(Document, &documents.data[i], &documents.data[random_index_from_hash]);
     }
     print("[info] Shuffled documents using hashes as source of randomness\n");
