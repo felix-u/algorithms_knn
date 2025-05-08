@@ -241,7 +241,7 @@ void entrypoint(void) {
             array_push_assume_capacity(&word_vocabulary, best);
             best->count = 0;
         }
-        print("[info] Computed word_vocabulary of top % most-used words\n", fmt(usize, vocabulary_size));
+        print("[info] Computed vocabulary of top % most-used words\n", fmt(usize, vocabulary_size));
 
         for_slice (Document *, document, documents) {
             Mode mode = mode_word;
@@ -356,7 +356,7 @@ void entrypoint(void) {
                         i += 1;
                     } else {
                         array_push_assume_capacity(updated_pairs, &pair.left);
-                        if (i == document->byte_pair_indices.count) array_push_assume_capacity(updated_pairs, &pair.right);
+                        if (i + 1 == document->byte_pair_indices.count - 1) array_push_assume_capacity(updated_pairs, &pair.right);
                     }
                 }
 
