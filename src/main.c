@@ -225,7 +225,7 @@ void entrypoint(void) {
 
     // TODO(felix): should have indexed hashmap (w/ ordering option) in base layer!
     Array_Word_Frequency word_vocabulary = { .arena = &arena };
-    usize vocabulary_size = 50;
+    usize vocabulary_size = 5000;
     array_ensure_capacity(&word_vocabulary, vocabulary_size);
     {
         for (usize i = 0; i < vocabulary_size; i += 1) {
@@ -331,7 +331,10 @@ void entrypoint(void) {
             most_common = pair;
             most_common_index = (Byte_Pair_Index)i;
         }
-        if (most_common == 0) break;
+        if (most_common == 0 || most_common->count < 2) {
+            arena_temp_end(temp);
+            break;
+        }
         array_push_assume_capacity(&byte_pair_vocabulary_counts, &most_common->count);
         array_push_assume_capacity(&byte_pair_vocabulary, &most_common_index);
 
@@ -361,7 +364,16 @@ void entrypoint(void) {
         print("\r[info] Byte pair merge %, total %", fmt(usize, byte_pair_vocabulary.count), fmt(usize, total_byte_pair_count));
     }
     print("\n");
-    print("[info] Computed vocabulary of top % most-used byte pairs\n", fmt(usize, vocabulary_size));
+
+    usize effective_byte_pair_count = 0;
+    for (; effective_byte_pair_count < byte_pair_vocabulary.count; effective_byte_pair_count += 1) {
+        if (byte_pair_vocabulary_counts.data[effective_byte_pair_count] == 0) break;
+    }
+    byte_pair_vocabulary.count = effective_byte_pair_count;
+    byte_pair_vocabulary_counts.count = effective_byte_pair_count;
+    print("[info] Computed vocabulary of top % most-used byte pairs", fmt(usize, byte_pair_vocabulary.count));
+    if (byte_pair_vocabulary.count < vocabulary_size) print(" (maximum compression reached before %-token max vocabulary size)", fmt(usize, vocabulary_size));
+    print("\n");
 
     usize top = byte_pair_vocabulary.count;
     print("[info] Expansion of top % pairs:\n", fmt(usize, top));
