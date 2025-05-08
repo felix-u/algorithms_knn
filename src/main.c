@@ -235,7 +235,7 @@ void entrypoint(void) {
     }
     print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
 
-    usize vocabulary_size = 5000;
+    usize vocabulary_size = 10000;
 
     Map word_vocabulary = map_create(&arena, vocabulary_size, u16, map_key_string);
 
@@ -416,7 +416,7 @@ void entrypoint(void) {
         if (byte_pair_vocabulary.count < vocabulary_size) print(" (maximum compression reached before %-token max vocabulary size)", fmt(usize, vocabulary_size));
         print("\n");
 
-        bool print_byte_pair_expansions = true;
+        bool print_byte_pair_expansions = false;
         if (print_byte_pair_expansions) {
             usize top = byte_pair_vocabulary.count;
             print("[info] Expansion of top % pairs:\n", fmt(usize, top));
