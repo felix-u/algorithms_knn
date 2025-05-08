@@ -40,31 +40,32 @@ static void byte_pair_print(Array_Byte_Pair pairs, Byte_Pair_Index index, bool w
     if (with_separator) print(")");
 }
 
+structdef(Vector) { Array_u16 items; f64 length; };
+
+enumdef(Mode, u8) { mode_word, mode_token, mode_count };
+
 structdef(Document) {
     String label, text;
 
     Slice_String words;
-    Array_u16 word_vector;
-    f64 word_vector_length;
-
     Array_Byte_Pair_Index byte_pair_indices, next_byte_pair_indices;
-    Array_u16 byte_pair_vector;
-    f64 byte_pair_vector_length;
+
+    Vector vectors[mode_count];
 };
 
 typedef Array(f64) Array_f64;
-static inline Array_f64 compute_similarities(Arena *arena, Document query, Array_Document comparison_set) {
+static inline Array_f64 compute_similarities(Arena *arena, Document query, Array_Document comparison_set, Mode mode) {
     Array_f64 similarities = { .arena = arena };
     array_ensure_capacity(&similarities, comparison_set.count);
     for_slice (Document *, sample, comparison_set) {
         f64 dot_product = 0;
-        for (usize i = 0; i < sample->word_vector.count; i += 1) {
-            f64 query_feature = (f64)query.word_vector.data[i];
-            f64 sample_feature = (f64)sample->word_vector.data[i];
+        for (usize i = 0; i < sample->vectors[mode].items.count; i += 1) {
+            f64 query_feature = (f64)query.vectors[mode].items.data[i];
+            f64 sample_feature = (f64)sample->vectors[mode].items.data[i];
             dot_product += query_feature * sample_feature;
         }
 
-        f64 cosine_similarity = dot_product / (query.word_vector_length * sample->word_vector_length);
+        f64 cosine_similarity = dot_product / (query.vectors[mode].length * sample->vectors[mode].length);
         array_push_assume_capacity(&similarities, &cosine_similarity);
     }
     return similarities;
@@ -223,9 +224,8 @@ void entrypoint(void) {
     }
     print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
 
-    // TODO(felix): should have indexed hashmap (w/ ordering option) in base layer!
     Array_Word_Frequency word_vocabulary = { .arena = &arena };
-    usize vocabulary_size = 5000;
+    usize vocabulary_size = 5000; // TODO(felix): back to 5000 before official results
     array_ensure_capacity(&word_vocabulary, vocabulary_size);
     {
         for (usize i = 0; i < vocabulary_size; i += 1) {
@@ -244,145 +244,187 @@ void entrypoint(void) {
         print("[info] Computed word_vocabulary of top % most-used words\n", fmt(usize, vocabulary_size));
 
         for_slice (Document *, document, documents) {
-            document->word_vector.arena = &arena;
-            array_ensure_capacity(&document->word_vector, vocabulary_size + 1);
-            document->word_vector.count = vocabulary_size + 1;
+            Mode mode = mode_word;
+            Vector *vector = &document->vectors[mode];
+
+            vector->items.arena = &arena;
+            array_ensure_capacity(&vector->items, vocabulary_size + 1);
+            vector->items.count = vocabulary_size + 1;
 
             for_slice (String *, word, document->words) {
                 bool unknown = true;
                 for (usize i = 0; i < word_vocabulary.count; i += 1) {
                     String vocabulary_word = *word_vocabulary.data[i].word;
                     if (!string_equal(*word, vocabulary_word)) continue;
-                    document->word_vector.data[i] += 1;
+                    vector->items.data[i] += 1;
                     unknown = false;
                     break;
                 }
-                if (unknown) document->word_vector.data[vocabulary_size] += 1;
+                if (unknown) vector->items.data[vocabulary_size] += 1;
             }
         }
         print("[info] Computed word vectors for all % documents\n", fmt(usize, documents.count));
 
         for_slice (Document *, document, documents) {
+            Mode mode = mode_word;
+            Vector *vector = &document->vectors[mode];
             f64 sum_of_squares = 0;
-            for_slice (u16 *, frequency, document->word_vector) {
+            for_slice (u16 *, frequency, vector->items) {
                 f64 value = (f64)*frequency;
                 sum_of_squares += value * value;
             }
-            document->word_vector_length = sqrt(sum_of_squares);
+            vector->length = sqrt(sum_of_squares);
         }
         print("[info] Computed word vector lengths for all % documents\n", fmt(usize, documents.count));
     }
 
     Array_Byte_Pair byte_pairs = { .arena = &arena };
     array_ensure_capacity(&byte_pairs, vocabulary_size * 2);
-    for (u16 i = 0; i < 128; i += 1) {
-        Byte_Pair ascii = { .left = i };
-        array_push_assume_capacity(&byte_pairs, &ascii);
-    }
-
-    for_slice (Document *, document, documents) {
-        document->byte_pair_indices.arena = &arena;
-        String text = document->text;
-        array_ensure_capacity(&document->byte_pair_indices, text.count);
-
-        for (usize i = 0; i < text.count; i += 1) {
-            Byte_Pair_Index ascii = (Byte_Pair_Index)document->text.data[i];
-            array_push_assume_capacity(&document->byte_pair_indices, &ascii);
+    {
+        for (u16 i = 0; i < 128; i += 1) {
+            Byte_Pair ascii = { .left = i };
+            array_push_assume_capacity(&byte_pairs, &ascii);
         }
 
-        document->next_byte_pair_indices.arena = &arena;
-        array_ensure_capacity(&document->next_byte_pair_indices, text.count);
-    }
+        for_slice (Document *, document, documents) {
+            document->byte_pair_indices.arena = &arena;
+            String text = document->text;
+            array_ensure_capacity(&document->byte_pair_indices, text.count);
 
-    Array_u16 byte_pair_vocabulary_counts = { .arena = &arena };
-    array_ensure_capacity(&byte_pair_vocabulary_counts, vocabulary_size);
-    Array_Byte_Pair_Index byte_pair_vocabulary = { .arena = &arena };
-    array_ensure_capacity(&byte_pair_vocabulary, vocabulary_size);
+            for (usize i = 0; i < text.count; i += 1) {
+                Byte_Pair_Index ascii = (Byte_Pair_Index)document->text.data[i];
+                array_push_assume_capacity(&document->byte_pair_indices, &ascii);
+            }
 
-    while (byte_pair_vocabulary.count < vocabulary_size) {
-        Arena_Temp temp = arena_temp_begin(&arena);
+            document->next_byte_pair_indices.arena = &arena;
+            array_ensure_capacity(&document->next_byte_pair_indices, text.count);
+        }
 
-        for_slice (Byte_Pair *, pair, byte_pairs) pair->count = 0;
+        Array_u16 byte_pair_vocabulary_counts = { .arena = &arena };
+        array_ensure_capacity(&byte_pair_vocabulary_counts, vocabulary_size);
+        Array_Byte_Pair_Index byte_pair_vocabulary = { .arena = &arena };
+        array_ensure_capacity(&byte_pair_vocabulary, vocabulary_size);
+
+        while (byte_pair_vocabulary.count < vocabulary_size) {
+            Arena_Temp temp = arena_temp_begin(&arena);
+
+            for_slice (Byte_Pair *, pair, byte_pairs) pair->count = 0;
+
+            for_slice (Document *, document, documents) {
+                for (usize i = 0; i + 1 < document->byte_pair_indices.count; i += 1) {
+                    Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1], .count = 1 };
+
+                    Byte_Pair *match = 0;
+                    for_slice (Byte_Pair *, existing_pair, byte_pairs) {
+                        bool equal = existing_pair->left == pair.left && existing_pair->right == pair.right;
+                        if (!equal) continue;
+                        match = existing_pair;
+                        break;
+                    }
+
+                    if (match != 0) match->count = clamp_high(match->count + 1, 0xffff);
+                    else {
+                        array_push(&byte_pairs, &pair);
+                    }
+                }
+            }
+
+            Byte_Pair *most_common = 0;
+            Byte_Pair_Index most_common_index = 0;
+            for (usize i = 0; i < byte_pairs.count; i += 1) {
+                Byte_Pair *pair = &byte_pairs.data[i];
+                if (most_common != 0 && (pair->count <= most_common->count)) continue;
+                most_common = pair;
+                most_common_index = (Byte_Pair_Index)i;
+            }
+            if (most_common == 0 || most_common->count < 2) {
+                arena_temp_end(temp);
+                break;
+            }
+            array_push_assume_capacity(&byte_pair_vocabulary_counts, &most_common->count);
+            array_push_assume_capacity(&byte_pair_vocabulary, &most_common_index);
+
+            for_slice (Document *, document, documents) {
+                Array_Byte_Pair_Index *updated_pairs = &document->next_byte_pair_indices;
+                updated_pairs->count = 0;
+
+                for (usize i = 0; i + 1 < document->byte_pair_indices.count; i += 1) {
+                    Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1] };
+                    bool should_compress = pair.left == most_common->left && pair.right == most_common->right;
+                    if (should_compress) {
+                        array_push_assume_capacity(updated_pairs, &most_common_index);
+                        i += 1;
+                    } else {
+                        array_push_assume_capacity(updated_pairs, &pair.left);
+                        if (i == document->byte_pair_indices.count) array_push_assume_capacity(updated_pairs, &pair.right);
+                    }
+                }
+
+                swap(Array_Byte_Pair_Index, &document->byte_pair_indices, updated_pairs);
+            }
+
+            arena_temp_end(temp);
+
+            usize total_byte_pair_count = 0;
+            for_slice (Document *, document, documents) total_byte_pair_count += document->byte_pair_indices.count;
+            print("\r[info] Byte pair merge %, total %", fmt(usize, byte_pair_vocabulary.count), fmt(usize, total_byte_pair_count));
+        }
+        print("\n");
+
+        usize effective_byte_pair_count = 0;
+        for (; effective_byte_pair_count < byte_pair_vocabulary.count; effective_byte_pair_count += 1) {
+            if (byte_pair_vocabulary_counts.data[effective_byte_pair_count] == 0) break;
+        }
+        byte_pair_vocabulary.count = effective_byte_pair_count;
+        byte_pair_vocabulary_counts.count = effective_byte_pair_count;
+        print("[info] Computed vocabulary of top % most-used byte pairs", fmt(usize, byte_pair_vocabulary.count));
+        if (byte_pair_vocabulary.count < vocabulary_size) print(" (maximum compression reached before %-token max vocabulary size)", fmt(usize, vocabulary_size));
+        print("\n");
+
+        usize top = byte_pair_vocabulary.count;
+        print("[info] Expansion of top % pairs:\n", fmt(usize, top));
+        for (usize i = 0; i < top; i += 1) {
+            print("[%] % usages of '", fmt(usize, i), fmt(u16, byte_pair_vocabulary_counts.data[i]));
+            byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], false);
+            print("' = ");
+            byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], true);
+            print("\n");
+        }
 
         for_slice (Document *, document, documents) {
-            for (usize i = 0; i + 1 < document->byte_pair_indices.count; i += 1) {
-                Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1], .count = 1 };
+            Mode mode = mode_token;
+            Vector *vector = &document->vectors[mode];
 
-                Byte_Pair *match = 0;
-                for_slice (Byte_Pair *, existing_pair, byte_pairs) {
-                    bool equal = existing_pair->left == pair.left && existing_pair->right == pair.right;
-                    if (!equal) continue;
-                    match = existing_pair;
+            vector->items.arena = &arena;
+            array_ensure_capacity(&vector->items, byte_pair_vocabulary.count + 1);
+            vector->items.count = byte_pair_vocabulary.count + 1;
+
+            for_slice (Byte_Pair_Index *, byte_pair_index, document->byte_pair_indices) {
+                bool unknown = true;
+                for (usize i = 0; i < byte_pair_vocabulary.count; i += 1) {
+                    Byte_Pair_Index vocabulary_byte_pair_index = byte_pair_vocabulary.data[i];
+                    if (*byte_pair_index != vocabulary_byte_pair_index) continue;
+                    vector->items.data[i] += 1;
+                    unknown = false;
                     break;
                 }
-
-                if (match != 0) match->count = clamp_high(match->count + 1, 0xffff);
-                else {
-                    array_push(&byte_pairs, &pair);
-                }
+                if (unknown) vector->items.data[byte_pair_vocabulary.count] += 1;
             }
         }
-
-        Byte_Pair *most_common = 0;
-        Byte_Pair_Index most_common_index = 0;
-        for (usize i = 0; i < byte_pairs.count; i += 1) {
-            Byte_Pair *pair = &byte_pairs.data[i];
-            if (most_common != 0 && (pair->count <= most_common->count)) continue;
-            most_common = pair;
-            most_common_index = (Byte_Pair_Index)i;
-        }
-        if (most_common == 0 || most_common->count < 2) {
-            arena_temp_end(temp);
-            break;
-        }
-        array_push_assume_capacity(&byte_pair_vocabulary_counts, &most_common->count);
-        array_push_assume_capacity(&byte_pair_vocabulary, &most_common_index);
+        print("[info] Computed token vectors for all % documents\n", fmt(usize, documents.count));
 
         for_slice (Document *, document, documents) {
-            Array_Byte_Pair_Index *updated_pairs = &document->next_byte_pair_indices;
-            updated_pairs->count = 0;
+            Mode mode = mode_token;
+            Vector *vector = &document->vectors[mode];
 
-            for (usize i = 0; i + 1 < document->byte_pair_indices.count; i += 1) {
-                Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1] };
-                bool should_compress = pair.left == most_common->left && pair.right == most_common->right;
-                if (should_compress) {
-                    array_push_assume_capacity(updated_pairs, &most_common_index);
-                    i += 1;
-                } else {
-                    array_push_assume_capacity(updated_pairs, &pair.left);
-                    if (i == document->byte_pair_indices.count) array_push_assume_capacity(updated_pairs, &pair.right);
-                }
+            f64 sum_of_squares = 0;
+            for_slice (u16 *, frequency, vector->items) {
+                f64 value = (f64)*frequency;
+                sum_of_squares += value * value;
             }
-
-            swap(Array_Byte_Pair_Index, &document->byte_pair_indices, updated_pairs);
+            vector->length = sqrt(sum_of_squares);
         }
-
-        arena_temp_end(temp);
-
-        usize total_byte_pair_count = 0;
-        for_slice (Document *, document, documents) total_byte_pair_count += document->byte_pair_indices.count;
-        print("\r[info] Byte pair merge %, total %", fmt(usize, byte_pair_vocabulary.count), fmt(usize, total_byte_pair_count));
-    }
-    print("\n");
-
-    usize effective_byte_pair_count = 0;
-    for (; effective_byte_pair_count < byte_pair_vocabulary.count; effective_byte_pair_count += 1) {
-        if (byte_pair_vocabulary_counts.data[effective_byte_pair_count] == 0) break;
-    }
-    byte_pair_vocabulary.count = effective_byte_pair_count;
-    byte_pair_vocabulary_counts.count = effective_byte_pair_count;
-    print("[info] Computed vocabulary of top % most-used byte pairs", fmt(usize, byte_pair_vocabulary.count));
-    if (byte_pair_vocabulary.count < vocabulary_size) print(" (maximum compression reached before %-token max vocabulary size)", fmt(usize, vocabulary_size));
-    print("\n");
-
-    usize top = byte_pair_vocabulary.count;
-    print("[info] Expansion of top % pairs:\n", fmt(usize, top));
-    for (usize i = 0; i < top; i += 1) {
-        print("[%] % usages of '", fmt(usize, i), fmt(u16, byte_pair_vocabulary_counts.data[i]));
-        byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], false);
-        print("' = ");
-        byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], true);
-        print("\n");
+        print("[info] Computed token vector lengths for all % documents\n", fmt(usize, documents.count));
     }
 
     for (usize i = 0; i < documents.count; i += 1) {
@@ -419,72 +461,80 @@ void entrypoint(void) {
     typedef Slice(usize) Slice_usize;
     Slice_usize k_values = slice_of(usize, 1, 3, 5, 7, 9);
 
-    typedef Array(Array_String) Array_Array_String;
-    Array_Array_String validation_guesses_per_k = { .arena = &arena };
-    array_ensure_capacity(&validation_guesses_per_k, k_values.count);
-    validation_guesses_per_k.count = k_values.count;
+    for (Mode mode = 0; mode < mode_count; mode += 1) {
+        Arena_Temp temp = arena_temp_begin(&arena);
 
-    for_slice(Array_String *, validation_guesses, validation_guesses_per_k) {
-        validation_guesses->arena = &arena;
-        array_ensure_capacity(validation_guesses, validation_set.count);
-    }
+        String mode_string = mode == mode_word ? string("<word>") : string("<token>");
 
-    for_slice (Document *, query, validation_set) {
-        Array_f64 similarities = compute_similarities(&arena, *query, training_set);
+        typedef Array(Array_String) Array_Array_String;
+        Array_Array_String validation_guesses_per_k = { .arena = &arena };
+        array_ensure_capacity(&validation_guesses_per_k, k_values.count);
+        validation_guesses_per_k.count = k_values.count;
+
+        for_slice(Array_String *, validation_guesses, validation_guesses_per_k) {
+            validation_guesses->arena = &arena;
+            array_ensure_capacity(validation_guesses, validation_set.count);
+        }
+
+        for_slice (Document *, query, validation_set) {
+            Array_f64 similarities = compute_similarities(&arena, *query, training_set, mode);
+            for (usize k_index = 0; k_index < k_values.count; k_index += 1) {
+                usize k = k_values.data[k_index];
+                String guess = compute_guess(&arena, k, similarities, training_set);
+                array_push_assume_capacity(&validation_guesses_per_k.data[k_index], &guess);
+            }
+        }
+
+        usize best_k_index = 0;
+        usize max_correct_guess_count = 0;
+
+        print("[info] % (validation) ", fmt(String, mode_string));
         for (usize k_index = 0; k_index < k_values.count; k_index += 1) {
+            Array_String validation_guesses = validation_guesses_per_k.data[k_index];
             usize k = k_values.data[k_index];
-            String guess = compute_guess(&arena, k, similarities, training_set);
-            array_push_assume_capacity(&validation_guesses_per_k.data[k_index], &guess);
+
+            usize correct_guess_count = 0;
+            assert(validation_guesses.count == validation_set.count);
+            for (usize i = 0; i < validation_guesses.count; i += 1) {
+                String validation_label = validation_set.data[i].label;
+                String guess_label = validation_guesses.data[i];
+                correct_guess_count += string_equal(validation_label, guess_label);
+            }
+
+            if (correct_guess_count > max_correct_guess_count) {
+                best_k_index = k_index;
+                max_correct_guess_count = correct_guess_count;
+            }
+
+            f32 percentage = (f32)correct_guess_count / (f32)validation_guesses.count * 100.f;
+            print("(k = %, %%) ", fmt(usize, k), fmt(f32, percentage), fmt(char, '%'));
         }
-    }
+        print("\n");
 
-    usize best_k_index = 0;
-    usize max_correct_guess_count = 0;
+        usize best_k = k_values.data[best_k_index];
+        print("[info] % Choosing k = %\n", fmt(String, mode_string), fmt(usize, best_k));
 
-    print("[info] (validation) ");
-    for (usize k_index = 0; k_index < k_values.count; k_index += 1) {
-        Array_String validation_guesses = validation_guesses_per_k.data[k_index];
-        usize k = k_values.data[k_index];
+        {
+            Array_String testing_guesses = { .arena = &arena };
+            array_ensure_capacity(&testing_guesses, testing_set.count);
+            for_slice (Document *, query, testing_set) {
+                Array_f64 similarities = compute_similarities(&arena, *query, training_set, mode);
+                usize k = best_k;
+                String guess = compute_guess(&arena, k, similarities, training_set);
+                array_push_assume_capacity(&testing_guesses, &guess);
+            }
 
-        usize correct_guess_count = 0;
-        assert(validation_guesses.count == validation_set.count);
-        for (usize i = 0; i < validation_guesses.count; i += 1) {
-            String validation_label = validation_set.data[i].label;
-            String guess_label = validation_guesses.data[i];
-            correct_guess_count += string_equal(validation_label, guess_label);
-        }
-
-        if (correct_guess_count > max_correct_guess_count) {
-            best_k_index = k_index;
-            max_correct_guess_count = correct_guess_count;
-        }
-
-        f32 percentage = (f32)correct_guess_count / (f32)validation_guesses.count * 100.f;
-        print("(k = %, %%) ", fmt(usize, k), fmt(f32, percentage), fmt(char, '%'));
-    }
-    print("\n");
-
-    usize best_k = k_values.data[best_k_index];
-    print("[info] Choosing k = %\n", fmt(usize, best_k));
-
-    {
-        Array_String testing_guesses = { .arena = &arena };
-        array_ensure_capacity(&testing_guesses, testing_set.count);
-        for_slice (Document *, query, testing_set) {
-            Array_f64 similarities = compute_similarities(&arena, *query, training_set);
-            usize k = best_k;
-            String guess = compute_guess(&arena, k, similarities, training_set);
-            array_push_assume_capacity(&testing_guesses, &guess);
+            usize correct_guess_count = 0;
+            for (usize i = 0; i < testing_guesses.count; i += 1) {
+                String testing_label = testing_set.data[i].label;
+                String guess_label = testing_guesses.data[i];
+                correct_guess_count += string_equal(testing_label, guess_label);
+            }
+            f32 percentage = (f32)correct_guess_count / (f32)testing_guesses.count * 100.f;
+            print("[info] % (testing) k = % had accuracy %%\n", fmt(String, mode_string), fmt(usize, best_k), fmt(f32, percentage), fmt(char, '%'));
         }
 
-        usize correct_guess_count = 0;
-        for (usize i = 0; i < testing_guesses.count; i += 1) {
-            String testing_label = testing_set.data[i].label;
-            String guess_label = testing_guesses.data[i];
-            correct_guess_count += string_equal(testing_label, guess_label);
-        }
-        f32 percentage = (f32)correct_guess_count / (f32)testing_guesses.count * 100.f;
-        print("[info] (testing) k = % had accuracy %%\n", fmt(usize, best_k), fmt(f32, percentage), fmt(char, '%'));
+        arena_temp_end(temp);
     }
 
     arena_deinit(&arena);
