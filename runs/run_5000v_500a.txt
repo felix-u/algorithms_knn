@@ -1,0 +1,19 @@
+[info] Read 1740kB from 'corpora\arxiv/raw.txt'
+[info] Removed 42423 non-ASCII characters and 103880 stopwords; total word count 157075
+[info] Found 16635 unique words, 140440 repeat words
+[info] Computed vocabulary of top 5000 most-used words
+[info] Computed word vectors for all 2000 documents
+[info] Computed word vector lengths for all 2000 documents
+[info] Corpus has 1334421 characters total
+[info] Byte pair merge 5000, total 219884
+[info] Computed vocabulary of top 5000 most-used byte pairs
+[info] Computed token vectors for all 2000 documents
+[info] Computed token vector lengths for all 2000 documents
+[info] Shuffled documents using hashes as source of randomness
+[info] Split dataset into training (1200), validation (400), and testing (400)
+[info] <word> (validation) (k = 1, 62.25%) (k = 3, 51.75%) (k = 5, 49.25%) (k = 7, 43.50%) (k = 9, 43.25%)
+[info] <word> Choosing k = 1
+[info] <word> (testing) k = 1 had accuracy 61.75%
+[info] <token> (validation) (k = 1, 61.50%) (k = 3, 58.74%) (k = 5, 49.75%) (k = 7, 45.75%) (k = 9, 45.50%)
+[info] <token> Choosing k = 1
+[info] <token> (testing) k = 1 had accuracy 60.00%

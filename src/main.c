@@ -221,18 +221,6 @@ void entrypoint(void) {
 
     Map word_map = map_create(&arena, total_word_count, u16, map_key_string);
 
-    // structdef(Word_Frequency) { String *word; u16 count; };
-
-    // structdef(Hashmap_Word_Node) {
-    //     Word_Frequency frequency;
-    //     Hashmap_Word_Node *next;
-    // };
-
-    // typedef Array(Hashmap_Word_Node *) Array_Hashmap_Word_Node_Pointer;
-
-    // Array_Hashmap_Word_Node_Pointer word_map = { .arena = &arena };
-    // array_ensure_capacity(&word_map, total_word_count);
-
     usize unique_count = 0;
     usize repeat_count = 0;
     for_slice (Document *, document, documents) for_slice (String *, word, document->words) {
@@ -244,29 +232,12 @@ void entrypoint(void) {
 
         if (*count == 1) unique_count += 1;
         else repeat_count += 1;
-
-        // usize hash = compute_hash(*word, word_map.capacity);
-        // Hashmap_Word_Node **pair = &word_map.data[hash];
-        // while (*pair != 0 && !string_equal(*(*pair)->frequency.word, *word)) pair = &(*pair)->next;
-        // if (*pair == 0) {
-        //     Hashmap_Word_Node *new_pair = arena_make(&arena, 1, sizeof(Hashmap_Word_Node));
-        //     *new_pair = (Hashmap_Word_Node) { .frequency = { .word = word, .count = 1 } };
-        //     *pair = new_pair;
-        //     unique_count += 1;
-        // } else {
-        //     repeat_count += 1;
-        //     (*pair)->frequency.count = clamp_high((*pair)->frequency.count + 1, 0xffff);
-        // }
-
     }
     print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
 
-    usize vocabulary_size = 5000; // TODO(felix): back to 5000 before official results
+    usize vocabulary_size = 5000;
 
     Map word_vocabulary = map_create(&arena, vocabulary_size, u16, map_key_string);
-
-    // Array_Word_Frequency word_vocabulary = { .arena = &arena };
-    // array_ensure_capacity(&word_vocabulary, vocabulary_size);
 
     {
         Slice_Map_Key words = map_get_keys(&word_map);
@@ -295,21 +266,6 @@ void entrypoint(void) {
             *(u16 *)new.item = *best_count;
             *best_count = 0;
         }
-
-        // for (usize i = 0; i < vocabulary_size; i += 1) {
-        //     Word_Frequency *best = 0;
-        //     for (usize j = 0; j < word_map.capacity; j += 1) {
-        //         for (Hashmap_Word_Node *pair = word_map.data[j]; pair != 0; pair = pair->next) {
-        //             if (best != 0 && (pair->frequency.count <= best->count)) continue;
-        //             best = &pair->frequency;
-        //         }
-        //     }
-        //     if (best == 0) break;
-
-        //     array_push_assume_capacity(&word_vocabulary, best);
-        //     best->count = 0;
-        // }
-
         print("[info] Computed vocabulary of top % most-used words\n", fmt(usize, vocabulary_size));
 
         for_slice (Document *, document, documents) {
@@ -326,19 +282,6 @@ void entrypoint(void) {
                 if (unknown) vector->items.data[vocabulary_size] += 1;
                 else vector->items.data[get.index] += 1;
             }
-
-            // for_slice (String *, word, document->words) {
-            //     bool unknown = true;
-            //     for (usize i = 0; i < word_vocabulary.items.count; i += 1) {
-            //         String vocabulary_word = word_vocabulary.keys.data[i];
-            //         if (!string_equal(*word, vocabulary_word)) continue;
-            //         vector->items.data[i] += 1;
-            //         unknown = false;
-            //         break;
-            //     }
-            //     if (unknown) vector->items.data[vocabulary_size] += 1;
-            // }
-
         }
         print("[info] Computed word vectors for all % documents\n", fmt(usize, documents.count));
 
@@ -363,16 +306,10 @@ void entrypoint(void) {
 
         Map byte_pair_dictionary = map_create(&arena, total_character_count, u16, map_key_usize);
 
-        // Array_Byte_Pair byte_pair_dictionary = { .arena = &arena };
-        // array_ensure_capacity(&byte_pair_dictionary, total_character_count);
-
         for (u16 i = 1; i < 128; i += 1) {
-        // for (u16 i = 0; i < 128; i += 1) {
             Byte_Pair ascii = { .left = i };
             usize value = usize_from_byte_pair(ascii);
             map_get(&byte_pair_dictionary, number, value, .or_new = true);
-
-            // array_push_assume_capacity(&byte_pair_dictionary, &ascii);
         }
 
         for_slice (Document *, document, documents) {
@@ -402,8 +339,6 @@ void entrypoint(void) {
             map_get_items(&byte_pair_dictionary, &frequencies);
             for_slice (u16 *, frequency, frequencies) *frequency = 0;
 
-            // for_slice (Byte_Pair *, pair, byte_pair_dictionary) pair->count = 0;
-
             for_slice (Document *, document, documents) {
                 for (usize i = 0; i + 1 < document->byte_pair_indices.count; i += 1) {
                     Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1] };
@@ -420,21 +355,6 @@ void entrypoint(void) {
                     u16 *count = match.item;
                     usize new_count = clamp_high((usize)*count + 1, 0xffff);
                     *count = (u16)new_count;
-
-                    // Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1], .count = 1 };
-                    // Byte_Pair *match = 0;
-                    // for_slice (Byte_Pair *, existing_pair, byte_pair_dictionary) {
-                    //     bool equal = existing_pair->left == pair.left && existing_pair->right == pair.right;
-                    //     if (!equal) continue;
-                    //     match = existing_pair;
-                    //     break;
-                    // }
-
-                    // if (match != 0) match->count = clamp_high(match->count + 1, 0xffff);
-                    // else {
-                    //     array_push(&byte_pair_dictionary, &pair);
-                    // }
-
                 }
             }
 
@@ -458,21 +378,6 @@ void entrypoint(void) {
             }
             array_push_assume_capacity(&byte_pair_vocabulary_counts, &most_common_count);
             array_push_assume_capacity(&byte_pair_vocabulary, &most_common_index);
-
-            // Byte_Pair *most_common = 0;
-            // Byte_Pair_Index most_common_index = 0;
-            // for (usize i = 0; i < byte_pair_dictionary.count; i += 1) {
-            //     Byte_Pair *pair = &byte_pair_dictionary.data[i];
-            //     if (most_common != 0 && (pair->count <= most_common->count)) continue;
-            //     most_common = pair;
-            //     most_common_index = (Byte_Pair_Index)i;
-            // }
-            // if (most_common == 0 || most_common->count < 2) {
-            //     arena_temp_end(temp);
-            //     break;
-            // }
-            // array_push_assume_capacity(&byte_pair_vocabulary_counts, &most_common->count);
-            // array_push_assume_capacity(&byte_pair_vocabulary, &most_common_index);
 
             for_slice (Document *, document, documents) {
                 Array_Byte_Pair_Index *updated_pairs = &document->next_byte_pair_indices;
@@ -511,7 +416,7 @@ void entrypoint(void) {
         if (byte_pair_vocabulary.count < vocabulary_size) print(" (maximum compression reached before %-token max vocabulary size)", fmt(usize, vocabulary_size));
         print("\n");
 
-        bool print_byte_pair_expansions = false;
+        bool print_byte_pair_expansions = true;
         if (print_byte_pair_expansions) {
             usize top = byte_pair_vocabulary.count;
             print("[info] Expansion of top % pairs:\n", fmt(usize, top));
