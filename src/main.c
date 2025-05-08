@@ -19,11 +19,27 @@ static inline usize compute_hash(String bytes, usize capacity) {
 }
 
 typedef u16 Byte_Pair_Index;
+typedef Array(u16) Array_u16;
+typedef Array_u16 Array_Byte_Pair_Index;
 structdef(Byte_Pair) {
     Byte_Pair_Index left, right;
+    u16 count;
 };
 
-typedef Array(u16) Array_u16;
+static void byte_pair_print(Array_Byte_Pair pairs, Byte_Pair_Index index, bool with_separator) {
+    Byte_Pair pair = pairs.data[index];
+    if (pair.right == 0) {
+        assert(pair.left < 128);
+        print("%", fmt(char, (u8)pair.left));
+        return;
+    }
+    if (with_separator) print("(");
+    byte_pair_print(pairs, pair.left, with_separator);
+    if (with_separator) print(")(");
+    byte_pair_print(pairs, pair.right, with_separator);
+    if (with_separator) print(")");
+}
+
 structdef(Document) {
     String label, text;
 
@@ -31,7 +47,7 @@ structdef(Document) {
     Array_u16 word_vector;
     f64 word_vector_length;
 
-    Array_Byte_Pair byte_pairs;
+    Array_Byte_Pair_Index byte_pair_indices, next_byte_pair_indices;
     Array_u16 byte_pair_vector;
     f64 byte_pair_vector_length;
 };
@@ -209,7 +225,7 @@ void entrypoint(void) {
 
     // TODO(felix): should have indexed hashmap (w/ ordering option) in base layer!
     Array_Word_Frequency word_vocabulary = { .arena = &arena };
-    usize vocabulary_size = 5000;
+    usize vocabulary_size = 50;
     array_ensure_capacity(&word_vocabulary, vocabulary_size);
     {
         for (usize i = 0; i < vocabulary_size; i += 1) {
@@ -257,65 +273,104 @@ void entrypoint(void) {
         print("[info] Computed word vector lengths for all % documents\n", fmt(usize, documents.count));
     }
 
-    structdef(Byte_Pair_Frequency) { Byte_Pair pair; u16 count; };
-
-    Array_Byte_Pair_Frequency byte_pair_map = { .arena = &arena };
-    array_ensure_capacity(&byte_pair_map, vocabulary_size * 2);
-
-    repeat_count = 0;
+    Array_Byte_Pair byte_pairs = { .arena = &arena };
+    array_ensure_capacity(&byte_pairs, vocabulary_size * 2);
     for (u16 i = 0; i < 128; i += 1) {
-        Byte_Pair_Frequency ascii = { .pair.left = i };
-        array_push_assume_capacity(&byte_pair_map, &ascii);
+        Byte_Pair ascii = { .left = i };
+        array_push_assume_capacity(&byte_pairs, &ascii);
     }
-    unique_count = 128;
+
     for_slice (Document *, document, documents) {
-        document->byte_pairs.arena = &arena;
+        document->byte_pair_indices.arena = &arena;
         String text = document->text;
-        array_ensure_capacity(&document->byte_pairs, text.count * 2 - 1);
+        array_ensure_capacity(&document->byte_pair_indices, text.count);
 
-        for (usize i = 0; i + 1 < text.count; i += 1) {
-            Byte_Pair pair = { .left = text.data[i], .right = text.data[i + 1] };
-            array_push_assume_capacity(&document->byte_pairs, &pair);
-
-            Byte_Pair_Frequency *match = 0;
-            for_slice (Byte_Pair_Frequency *, frequency, byte_pair_map) {
-                bool equal = frequency->pair.left == pair.left && frequency->pair.right == pair.right;
-                if (!equal) continue;
-                match = frequency;
-                break;
-            }
-
-            if (match != 0) {
-                repeat_count += 1;
-                match->count += 1;
-                continue;
-            }
-
-            Byte_Pair_Frequency new = { .pair = pair, .count = 1 };
-            array_push_assume_capacity(&byte_pair_map, &new);
-            unique_count += 1;
+        for (usize i = 0; i < text.count; i += 1) {
+            Byte_Pair_Index ascii = (Byte_Pair_Index)document->text.data[i];
+            array_push_assume_capacity(&document->byte_pair_indices, &ascii);
         }
-    }
-    print("[info] Found % unique byte pairs, % repeat\n", fmt(usize, unique_count), fmt(usize, repeat_count));
 
-    Array_Byte_Pair_Frequency byte_pair_vocabulary = { .arena = &arena };
+        document->next_byte_pair_indices.arena = &arena;
+        array_ensure_capacity(&document->next_byte_pair_indices, text.count);
+    }
+
+    Array_u16 byte_pair_vocabulary_counts = { .arena = &arena };
+    array_ensure_capacity(&byte_pair_vocabulary_counts, vocabulary_size);
+    Array_Byte_Pair_Index byte_pair_vocabulary = { .arena = &arena };
     array_ensure_capacity(&byte_pair_vocabulary, vocabulary_size);
 
-    {
-        while (byte_pair_vocabulary.count < vocabulary_size) {
-            Byte_Pair_Frequency *best = 0;
-            for_slice (Byte_Pair_Frequency *, frequency, byte_pair_map) {
-                if (best != 0 && (frequency->count <= best->count)) continue;
-                best = frequency;
-            }
-            if (best == 0) goto done_with_byte_pair_vocabulary;
+    while (byte_pair_vocabulary.count < vocabulary_size) {
+        Arena_Temp temp = arena_temp_begin(&arena);
 
-            array_push_assume_capacity(&byte_pair_vocabulary, best);
-            best->count = 0;
+        for_slice (Byte_Pair *, pair, byte_pairs) pair->count = 0;
+
+        for_slice (Document *, document, documents) {
+            for (usize i = 0; i + 1 < document->byte_pair_indices.count; i += 1) {
+                Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1], .count = 1 };
+
+                Byte_Pair *match = 0;
+                for_slice (Byte_Pair *, existing_pair, byte_pairs) {
+                    bool equal = existing_pair->left == pair.left && existing_pair->right == pair.right;
+                    if (!equal) continue;
+                    match = existing_pair;
+                    break;
+                }
+
+                if (match != 0) match->count = clamp_high(match->count + 1, 0xffff);
+                else {
+                    array_push(&byte_pairs, &pair);
+                }
+            }
         }
 
-        done_with_byte_pair_vocabulary:
-        print("[info] Computed vocabulary of top % most-used byte pairs\n", fmt(usize, vocabulary_size));
+        Byte_Pair *most_common = 0;
+        Byte_Pair_Index most_common_index = 0;
+        for (usize i = 0; i < byte_pairs.count; i += 1) {
+            Byte_Pair *pair = &byte_pairs.data[i];
+            if (most_common != 0 && (pair->count <= most_common->count)) continue;
+            most_common = pair;
+            most_common_index = (Byte_Pair_Index)i;
+        }
+        if (most_common == 0) break;
+        array_push_assume_capacity(&byte_pair_vocabulary_counts, &most_common->count);
+        array_push_assume_capacity(&byte_pair_vocabulary, &most_common_index);
+
+        for_slice (Document *, document, documents) {
+            Array_Byte_Pair_Index *updated_pairs = &document->next_byte_pair_indices;
+            updated_pairs->count = 0;
+
+            for (usize i = 0; i + 1 < document->byte_pair_indices.count; i += 1) {
+                Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1] };
+                bool should_compress = pair.left == most_common->left && pair.right == most_common->right;
+                if (should_compress) {
+                    array_push_assume_capacity(updated_pairs, &most_common_index);
+                    i += 1;
+                } else {
+                    array_push_assume_capacity(updated_pairs, &pair.left);
+                    if (i == document->byte_pair_indices.count) array_push_assume_capacity(updated_pairs, &pair.right);
+                }
+            }
+
+            swap(Array_Byte_Pair_Index, &document->byte_pair_indices, updated_pairs);
+        }
+
+        arena_temp_end(temp);
+
+        usize total_byte_pair_count = 0;
+        for_slice (Document *, document, documents) total_byte_pair_count += document->byte_pair_indices.count;
+        print("\r[info] Byte pair merge %, total %", fmt(usize, byte_pair_vocabulary.count), fmt(usize, total_byte_pair_count));
+    }
+    print("\n");
+    print("[info] Computed vocabulary of top % most-used byte pairs\n", fmt(usize, vocabulary_size));
+
+    usize top = byte_pair_vocabulary.count;
+    print("[info] Expansion of top % pairs:\n", fmt(usize, top));
+    for (usize i = 0; i < top; i += 1) {
+        print("[%] % usages of '", fmt(usize, i), fmt(u16, byte_pair_vocabulary_counts.data[i]));
+        byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], false);
+        print("' = ");
+        byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], true);
+        print("\n");
     }
 
     for (usize i = 0; i < documents.count; i += 1) {
