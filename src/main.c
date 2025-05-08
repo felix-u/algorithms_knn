@@ -23,11 +23,26 @@ typedef Array(u16) Array_u16;
 typedef Array_u16 Array_Byte_Pair_Index;
 structdef(Byte_Pair) {
     Byte_Pair_Index left, right;
-    u16 count;
+    // u16 count;
 };
 
-static void byte_pair_print(Array_Byte_Pair pairs, Byte_Pair_Index index, bool with_separator) {
-    Byte_Pair pair = pairs.data[index];
+static usize usize_from_byte_pair(Byte_Pair pair) {
+    usize result = 0;
+    result |= (usize)(pair.left << 16);
+    result |= pair.right;
+    return result;
+}
+
+static Byte_Pair byte_pair_from_usize(usize number) {
+    Byte_Pair result = {0};
+    result.left = (Byte_Pair_Index)(number >> 16);
+    result.right = (Byte_Pair_Index)(number & 0xffff);
+    return result;
+}
+
+static void byte_pair_print(Map pairs, Byte_Pair_Index index, bool with_separator) {
+    Byte_Pair pair = byte_pair_from_usize(pairs.keys.data[index].number);
+
     if (pair.right == 0) {
         assert(pair.left < 128);
         print("%", fmt(char, (u8)pair.left));
@@ -137,9 +152,9 @@ void entrypoint(void) {
     if (corpus.count == 0) exit(1);
     print("[info] Read %kB from '%'\n", fmt(usize, corpus.count / 1024), fmt(String, path_to_corpus));
 
-    Map stopword_map = map_create(&arena, stopword_list.count, bool);
+    Map stopword_map = map_create(&arena, stopword_list.count, bool, map_key_string);
     for_slice (String *, stopword, stopword_list) {
-        Map_Index index = map_get(&stopword_map, *stopword, .or_new = true).index;
+        Map_Index index = map_get(&stopword_map, string, *stopword, .or_new = true).index;
         assert(index != 0);
     }
 
@@ -184,7 +199,7 @@ void entrypoint(void) {
             while (j < text.count && !ascii_is_whitespace(text.data[j])) j += 1;
             String word = string_range(text, start_index, j);
 
-            bool is_stopword = map_get(&stopword_map, word).index != 0;
+            bool is_stopword = map_get(&stopword_map, string, word).index != 0;
             if (is_stopword) {
                 stopword_removal_count += 1;
                 continue;
@@ -204,7 +219,7 @@ void entrypoint(void) {
     for_slice (Document *, document, documents) total_word_count += document->words.count;
     print("[info] Removed % non-ASCII characters and % stopwords; total word count %\n", fmt(usize, character_removal_count), fmt(usize, stopword_removal_count), fmt(usize, total_word_count));
 
-    Map word_map = map_create(&arena, total_word_count, u16);
+    Map word_map = map_create(&arena, total_word_count, u16, map_key_string);
 
     // structdef(Word_Frequency) { String *word; u16 count; };
 
@@ -221,7 +236,7 @@ void entrypoint(void) {
     usize unique_count = 0;
     usize repeat_count = 0;
     for_slice (Document *, document, documents) for_slice (String *, word, document->words) {
-        Map_Get frequency = map_get(&word_map, *word, .or_new = true);
+        Map_Get frequency = map_get(&word_map, string, *word, .or_new = true);
         assert(frequency.index != 0);
         u16 *count = frequency.item;
         usize new_count = clamp_high((usize)*count + 1, 0xffff);
@@ -248,13 +263,13 @@ void entrypoint(void) {
 
     usize vocabulary_size = 5000; // TODO(felix): back to 5000 before official results
 
-    Map word_vocabulary = map_create(&arena, vocabulary_size, u16);
+    Map word_vocabulary = map_create(&arena, vocabulary_size, u16, map_key_string);
 
     // Array_Word_Frequency word_vocabulary = { .arena = &arena };
     // array_ensure_capacity(&word_vocabulary, vocabulary_size);
 
     {
-        Slice_String words = map_get_keys(&word_map);
+        Slice_Map_Key words = map_get_keys(&word_map);
         typedef Slice(u16) Slice_u16;
         Slice_u16 counts = {0};
         map_get_items(&word_map, &counts);
@@ -265,7 +280,7 @@ void entrypoint(void) {
             u16 *best_count = 0;
 
             for (usize i = 0; i < words.count; i += 1) {
-                String word = words.data[i];
+                String word = words.data[i].string;
                 u16 *count = &counts.data[i];
 
                 if (best_word.count != 0 && (*count <= *best_count)) continue;
@@ -274,7 +289,7 @@ void entrypoint(void) {
             }
             if (best_word.count == 0) break;
 
-            Map_Get new = map_get(&word_vocabulary, best_word, .or_new = true);
+            Map_Get new = map_get(&word_vocabulary, string, best_word, .or_new = true);
             assert(new.index != 0);
             assert(*(u16 *)new.item == 0);
             *(u16 *)new.item = *best_count;
@@ -306,7 +321,7 @@ void entrypoint(void) {
             vector->items.count = vocabulary_size + 1;
 
             for_slice (String *, word, document->words) {
-                Map_Get get = map_get(&word_vocabulary, *word);
+                Map_Get get = map_get(&word_vocabulary, string, *word);
                 bool unknown = get.index == 0;
                 if (unknown) vector->items.data[vocabulary_size] += 1;
                 else vector->items.data[get.index] += 1;
@@ -340,14 +355,24 @@ void entrypoint(void) {
         print("[info] Computed word vector lengths for all % documents\n", fmt(usize, documents.count));
     }
 
-    bool byte_pair_enabled = false;
+    bool byte_pair_enabled = true;
     if (byte_pair_enabled) {
-        Array_Byte_Pair byte_pairs = { .arena = &arena };
-        array_ensure_capacity(&byte_pairs, vocabulary_size * 2);
+        usize total_character_count = 0;
+        for_slice (Document *, document, documents) total_character_count += document->text.count;
+        print("[info] Corpus has % characters total\n", fmt(usize, total_character_count));
 
-        for (u16 i = 0; i < 128; i += 1) {
+        Map byte_pair_dictionary = map_create(&arena, total_character_count, u16, map_key_usize);
+
+        // Array_Byte_Pair byte_pair_dictionary = { .arena = &arena };
+        // array_ensure_capacity(&byte_pair_dictionary, total_character_count);
+
+        for (u16 i = 1; i < 128; i += 1) {
+        // for (u16 i = 0; i < 128; i += 1) {
             Byte_Pair ascii = { .left = i };
-            array_push_assume_capacity(&byte_pairs, &ascii);
+            usize value = usize_from_byte_pair(ascii);
+            map_get(&byte_pair_dictionary, number, value, .or_new = true);
+
+            // array_push_assume_capacity(&byte_pair_dictionary, &ascii);
         }
 
         for_slice (Document *, document, documents) {
@@ -372,41 +397,82 @@ void entrypoint(void) {
         while (byte_pair_vocabulary.count < vocabulary_size) {
             Arena_Temp temp = arena_temp_begin(&arena);
 
-            for_slice (Byte_Pair *, pair, byte_pairs) pair->count = 0;
+            typedef Slice(u16) Slice_u16;
+            Slice_u16 frequencies = {0};
+            map_get_items(&byte_pair_dictionary, &frequencies);
+            for_slice (u16 *, frequency, frequencies) *frequency = 0;
+
+            // for_slice (Byte_Pair *, pair, byte_pair_dictionary) pair->count = 0;
 
             for_slice (Document *, document, documents) {
                 for (usize i = 0; i + 1 < document->byte_pair_indices.count; i += 1) {
-                    Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1], .count = 1 };
+                    Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1] };
+                    usize value = usize_from_byte_pair(pair);
 
-                    Byte_Pair *match = 0;
-                    for_slice (Byte_Pair *, existing_pair, byte_pairs) {
-                        bool equal = existing_pair->left == pair.left && existing_pair->right == pair.right;
-                        if (!equal) continue;
-                        match = existing_pair;
-                        break;
+                    Map_Get match = map_get(&byte_pair_dictionary, number, value);
+
+                    if (match.index == 0) {
+                        match = map_get(&byte_pair_dictionary, number, value, .or_new = true);
+                        u16 *count = match.item;
+                        assert(*count == 0);
                     }
 
-                    if (match != 0) match->count = clamp_high(match->count + 1, 0xffff);
-                    else {
-                        array_push(&byte_pairs, &pair);
-                    }
+                    u16 *count = match.item;
+                    usize new_count = clamp_high((usize)*count + 1, 0xffff);
+                    *count = (u16)new_count;
+
+                    // Byte_Pair pair = { .left = document->byte_pair_indices.data[i], .right = document->byte_pair_indices.data[i + 1], .count = 1 };
+                    // Byte_Pair *match = 0;
+                    // for_slice (Byte_Pair *, existing_pair, byte_pair_dictionary) {
+                    //     bool equal = existing_pair->left == pair.left && existing_pair->right == pair.right;
+                    //     if (!equal) continue;
+                    //     match = existing_pair;
+                    //     break;
+                    // }
+
+                    // if (match != 0) match->count = clamp_high(match->count + 1, 0xffff);
+                    // else {
+                    //     array_push(&byte_pair_dictionary, &pair);
+                    // }
+
                 }
             }
 
-            Byte_Pair *most_common = 0;
+            Byte_Pair *most_common = &(Byte_Pair){0};
+            u16 most_common_count = 0;
             Byte_Pair_Index most_common_index = 0;
-            for (usize i = 0; i < byte_pairs.count; i += 1) {
-                Byte_Pair *pair = &byte_pairs.data[i];
-                if (most_common != 0 && (pair->count <= most_common->count)) continue;
-                most_common = pair;
+            Slice_String keys = bit_cast(Slice_String) byte_pair_dictionary.keys;
+            assert(keys.count == byte_pair_dictionary.items.count);
+            Slice_u16 counts = bit_cast(Slice_u16) byte_pair_dictionary.items;
+            for (usize i = 0; i < keys.count; i += 1) {
+                Byte_Pair pair = byte_pair_from_usize(byte_pair_dictionary.keys.data[i].number);
+                u16 count = counts.data[i];
+                if (most_common != 0 && (count <= most_common_count)) continue;
+                *most_common = pair;
                 most_common_index = (Byte_Pair_Index)i;
+                most_common_count = count;
             }
-            if (most_common == 0 || most_common->count < 2) {
+            if (most_common == 0 || most_common_count < 2) {
                 arena_temp_end(temp);
                 break;
             }
-            array_push_assume_capacity(&byte_pair_vocabulary_counts, &most_common->count);
+            array_push_assume_capacity(&byte_pair_vocabulary_counts, &most_common_count);
             array_push_assume_capacity(&byte_pair_vocabulary, &most_common_index);
+
+            // Byte_Pair *most_common = 0;
+            // Byte_Pair_Index most_common_index = 0;
+            // for (usize i = 0; i < byte_pair_dictionary.count; i += 1) {
+            //     Byte_Pair *pair = &byte_pair_dictionary.data[i];
+            //     if (most_common != 0 && (pair->count <= most_common->count)) continue;
+            //     most_common = pair;
+            //     most_common_index = (Byte_Pair_Index)i;
+            // }
+            // if (most_common == 0 || most_common->count < 2) {
+            //     arena_temp_end(temp);
+            //     break;
+            // }
+            // array_push_assume_capacity(&byte_pair_vocabulary_counts, &most_common->count);
+            // array_push_assume_capacity(&byte_pair_vocabulary, &most_common_index);
 
             for_slice (Document *, document, documents) {
                 Array_Byte_Pair_Index *updated_pairs = &document->next_byte_pair_indices;
@@ -451,9 +517,9 @@ void entrypoint(void) {
             print("[info] Expansion of top % pairs:\n", fmt(usize, top));
             for (usize i = 0; i < top; i += 1) {
                 print("[%] % usages of '", fmt(usize, i), fmt(u16, byte_pair_vocabulary_counts.data[i]));
-                byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], false);
+                byte_pair_print(byte_pair_dictionary, byte_pair_vocabulary.data[i], false);
                 print("' = ");
-                byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], true);
+                byte_pair_print(byte_pair_dictionary, byte_pair_vocabulary.data[i], true);
                 print("\n");
             }
         }

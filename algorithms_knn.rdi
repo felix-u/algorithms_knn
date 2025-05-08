@@ -1,7 +1,7 @@
 // raddbg 0.9.16 project file
 
-recent_file: path: "src/main.c"
 recent_file: path: "src/base/base_map.c"
+recent_file: path: "src/main.c"
 recent_file: path: "src/base/base_core.c"
 recent_file: path: "src/base/base_ascii.c"
 target:
@@ -39,15 +39,5 @@ breakpoint:
 {
   source_location: "C:/Users/Felix/Desktop/git/algorithms_knn/src/base/base_map.c:56:1"
   condition: "slot.item_index == 0"
-  hit_count: 0
-}
-breakpoint:
-{
-  source_location: "C:/Users/Felix/Desktop/git/algorithms_knn/src/main.c:255:1"
-  hit_count: 0
-}
-breakpoint:
-{
-  source_location: "C:/Users/Felix/Desktop/git/algorithms_knn/src/main.c:261:1"
   hit_count: 0
 }
