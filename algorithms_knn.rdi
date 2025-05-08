@@ -1,7 +1,7 @@
 // raddbg 0.9.16 project file
 
-recent_file: path: "src/base/base_map.c"
 recent_file: path: "src/main.c"
+recent_file: path: "src/base/base_map.c"
 recent_file: path: "src/base/base_core.c"
 recent_file: path: "src/base/base_ascii.c"
 target:
