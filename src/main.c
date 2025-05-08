@@ -176,6 +176,10 @@ void entrypoint(void) {
         for (usize j = 0; j < text.count;) {
             usize start_index_including_whitespace = j;
             while (j < text.count && ascii_is_whitespace(text.data[j])) j += 1;
+
+            bool trailing_whitespace = j == text.count;
+            if (trailing_whitespace) break;
+
             start_index = j;
             while (j < text.count && !ascii_is_whitespace(text.data[j])) j += 1;
             String word = string_range(text, start_index, j);

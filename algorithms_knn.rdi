@@ -44,10 +44,10 @@ breakpoint:
 breakpoint:
 {
   source_location: "C:/Users/Felix/Desktop/git/algorithms_knn/src/main.c:255:1"
-  hit_count: 1
+  hit_count: 0
 }
 breakpoint:
 {
   source_location: "C:/Users/Felix/Desktop/git/algorithms_knn/src/main.c:261:1"
-  hit_count: 881
+  hit_count: 0
 }
