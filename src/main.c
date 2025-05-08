@@ -123,8 +123,8 @@ static inline String compute_guess(Arena *arena, usize k, Array_f64 similarities
 
 void entrypoint(void) {
     Arena arena = arena_init(512 * 1024 * 1024);
-    Slice_String arguments = os_get_arguments(&arena);
 
+    Slice_String arguments = os_get_arguments(&arena);
     if (arguments.count != 2) {
         log_error("usage: % path/to/corpus_directory/", fmt(String, arguments.data[0]));
         exit(1);
@@ -136,6 +136,12 @@ void entrypoint(void) {
     String corpus = file_read_bytes_relative_path(&arena, cstring_from_string(&arena, path_to_corpus), UINT32_MAX);
     if (corpus.count == 0) exit(1);
     print("[info] Read %kB from '%'\n", fmt(usize, corpus.count / 1024), fmt(String, path_to_corpus));
+
+    Map stopword_map = map_create(&arena, stopword_list.count, bool);
+    for_slice (String *, stopword, stopword_list) {
+        Map_Index index = map_get(&stopword_map, *stopword, .or_new = true).index;
+        assert(index != 0);
+    }
 
     Array_Document documents = { .arena = &arena };
     usize character_removal_count = 0;
@@ -174,14 +180,12 @@ void entrypoint(void) {
             while (j < text.count && !ascii_is_whitespace(text.data[j])) j += 1;
             String word = string_range(text, start_index, j);
 
-            bool is_stopword = false;
-            for_slice (String *, stopword, stopwords) {
-                if (!string_equal(word, *stopword)) continue;
+            bool is_stopword = map_get(&stopword_map, word).index != 0;
+            if (is_stopword) {
                 stopword_removal_count += 1;
-                is_stopword = true;
-                break;
+                continue;
             }
-            if (is_stopword) continue;
+
             array_push(&words_no_stopwords, &word);
 
             String to_push = string_range(text, start_index_including_whitespace, j);
@@ -192,55 +196,101 @@ void entrypoint(void) {
 
         array_push(&documents, &document);
     }
-    print("[info] Removed % non-ASCII characters and % stopwords\n", fmt(usize, character_removal_count), fmt(usize, stopword_removal_count));
+    usize total_word_count = 0;
+    for_slice (Document *, document, documents) total_word_count += document->words.count;
+    print("[info] Removed % non-ASCII characters and % stopwords; total word count %\n", fmt(usize, character_removal_count), fmt(usize, stopword_removal_count), fmt(usize, total_word_count));
 
-    structdef(Word_Frequency) { String *word; u16 count; };
+    Map word_map = map_create(&arena, total_word_count, u16);
 
-    structdef(Hashmap_Word_Node) {
-        Word_Frequency frequency;
-        Hashmap_Word_Node *next;
-    };
+    // structdef(Word_Frequency) { String *word; u16 count; };
 
-    typedef Array(Hashmap_Word_Node *) Array_Hashmap_Word_Node_Pointer;
+    // structdef(Hashmap_Word_Node) {
+    //     Word_Frequency frequency;
+    //     Hashmap_Word_Node *next;
+    // };
 
-    Array_Hashmap_Word_Node_Pointer word_map = { .arena = &arena };
-    array_ensure_capacity(&word_map, 10000);
+    // typedef Array(Hashmap_Word_Node *) Array_Hashmap_Word_Node_Pointer;
+
+    // Array_Hashmap_Word_Node_Pointer word_map = { .arena = &arena };
+    // array_ensure_capacity(&word_map, total_word_count);
 
     usize unique_count = 0;
     usize repeat_count = 0;
     for_slice (Document *, document, documents) for_slice (String *, word, document->words) {
-        usize hash = compute_hash(*word, word_map.capacity);
-        Hashmap_Word_Node **pair = &word_map.data[hash];
-        while (*pair != 0 && !string_equal(*(*pair)->frequency.word, *word)) pair = &(*pair)->next;
-        if (*pair == 0) {
-            Hashmap_Word_Node *new_pair = arena_make(&arena, 1, sizeof(Hashmap_Word_Node));
-            *new_pair = (Hashmap_Word_Node) { .frequency = { .word = word, .count = 1 } };
-            *pair = new_pair;
-            unique_count += 1;
-        } else {
-            repeat_count += 1;
-            (*pair)->frequency.count = clamp_high((*pair)->frequency.count + 1, 0xffff);
-        }
+        Map_Get frequency = map_get(&word_map, *word, .or_new = true);
+        assert(frequency.index != 0);
+        u16 *count = frequency.item;
+        usize new_count = clamp_high((usize)*count + 1, 0xffff);
+        *count = (u16)new_count;
+
+        if (*count == 1) unique_count += 1;
+        else repeat_count += 1;
+
+        // usize hash = compute_hash(*word, word_map.capacity);
+        // Hashmap_Word_Node **pair = &word_map.data[hash];
+        // while (*pair != 0 && !string_equal(*(*pair)->frequency.word, *word)) pair = &(*pair)->next;
+        // if (*pair == 0) {
+        //     Hashmap_Word_Node *new_pair = arena_make(&arena, 1, sizeof(Hashmap_Word_Node));
+        //     *new_pair = (Hashmap_Word_Node) { .frequency = { .word = word, .count = 1 } };
+        //     *pair = new_pair;
+        //     unique_count += 1;
+        // } else {
+        //     repeat_count += 1;
+        //     (*pair)->frequency.count = clamp_high((*pair)->frequency.count + 1, 0xffff);
+        // }
+
     }
     print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
 
-    Array_Word_Frequency word_vocabulary = { .arena = &arena };
     usize vocabulary_size = 5000; // TODO(felix): back to 5000 before official results
-    array_ensure_capacity(&word_vocabulary, vocabulary_size);
-    {
-        for (usize i = 0; i < vocabulary_size; i += 1) {
-            Word_Frequency *best = 0;
-            for (usize j = 0; j < word_map.capacity; j += 1) {
-                for (Hashmap_Word_Node *pair = word_map.data[j]; pair != 0; pair = pair->next) {
-                    if (best != 0 && (pair->frequency.count <= best->count)) continue;
-                    best = &pair->frequency;
-                }
-            }
-            if (best == 0) break;
 
-            array_push_assume_capacity(&word_vocabulary, best);
-            best->count = 0;
+    Map word_vocabulary = map_create(&arena, vocabulary_size, u16);
+
+    // Array_Word_Frequency word_vocabulary = { .arena = &arena };
+    // array_ensure_capacity(&word_vocabulary, vocabulary_size);
+
+    {
+        Slice_String words = map_get_keys(&word_map);
+        typedef Slice(u16) Slice_u16;
+        Slice_u16 counts = {0};
+        map_get_items(&word_map, &counts);
+        assert(words.count == counts.count);
+
+        while (word_vocabulary.items.count < vocabulary_size) {
+            String best_word = {0};
+            u16 *best_count = 0;
+
+            for (usize i = 0; i < words.count; i += 1) {
+                String word = words.data[i];
+                u16 *count = &counts.data[i];
+
+                if (best_word.count != 0 && (*count <= *best_count)) continue;
+                best_word = word;
+                best_count = count;
+            }
+            if (best_word.count == 0) break;
+
+            Map_Get new = map_get(&word_vocabulary, best_word, .or_new = true);
+            assert(new.index != 0);
+            assert(*(u16 *)new.item == 0);
+            *(u16 *)new.item = *best_count;
+            *best_count = 0;
         }
+
+        // for (usize i = 0; i < vocabulary_size; i += 1) {
+        //     Word_Frequency *best = 0;
+        //     for (usize j = 0; j < word_map.capacity; j += 1) {
+        //         for (Hashmap_Word_Node *pair = word_map.data[j]; pair != 0; pair = pair->next) {
+        //             if (best != 0 && (pair->frequency.count <= best->count)) continue;
+        //             best = &pair->frequency;
+        //         }
+        //     }
+        //     if (best == 0) break;
+
+        //     array_push_assume_capacity(&word_vocabulary, best);
+        //     best->count = 0;
+        // }
+
         print("[info] Computed vocabulary of top % most-used words\n", fmt(usize, vocabulary_size));
 
         for_slice (Document *, document, documents) {
@@ -252,16 +302,24 @@ void entrypoint(void) {
             vector->items.count = vocabulary_size + 1;
 
             for_slice (String *, word, document->words) {
-                bool unknown = true;
-                for (usize i = 0; i < word_vocabulary.count; i += 1) {
-                    String vocabulary_word = *word_vocabulary.data[i].word;
-                    if (!string_equal(*word, vocabulary_word)) continue;
-                    vector->items.data[i] += 1;
-                    unknown = false;
-                    break;
-                }
+                Map_Get get = map_get(&word_vocabulary, *word);
+                bool unknown = get.index == 0;
                 if (unknown) vector->items.data[vocabulary_size] += 1;
+                else vector->items.data[get.index] += 1;
             }
+
+            // for_slice (String *, word, document->words) {
+            //     bool unknown = true;
+            //     for (usize i = 0; i < word_vocabulary.items.count; i += 1) {
+            //         String vocabulary_word = word_vocabulary.keys.data[i];
+            //         if (!string_equal(*word, vocabulary_word)) continue;
+            //         vector->items.data[i] += 1;
+            //         unknown = false;
+            //         break;
+            //     }
+            //     if (unknown) vector->items.data[vocabulary_size] += 1;
+            // }
+
         }
         print("[info] Computed word vectors for all % documents\n", fmt(usize, documents.count));
 
@@ -278,9 +336,11 @@ void entrypoint(void) {
         print("[info] Computed word vector lengths for all % documents\n", fmt(usize, documents.count));
     }
 
-    Array_Byte_Pair byte_pairs = { .arena = &arena };
-    array_ensure_capacity(&byte_pairs, vocabulary_size * 2);
-    {
+    bool byte_pair_enabled = false;
+    if (byte_pair_enabled) {
+        Array_Byte_Pair byte_pairs = { .arena = &arena };
+        array_ensure_capacity(&byte_pairs, vocabulary_size * 2);
+
         for (u16 i = 0; i < 128; i += 1) {
             Byte_Pair ascii = { .left = i };
             array_push_assume_capacity(&byte_pairs, &ascii);
@@ -381,14 +441,17 @@ void entrypoint(void) {
         if (byte_pair_vocabulary.count < vocabulary_size) print(" (maximum compression reached before %-token max vocabulary size)", fmt(usize, vocabulary_size));
         print("\n");
 
-        usize top = byte_pair_vocabulary.count;
-        print("[info] Expansion of top % pairs:\n", fmt(usize, top));
-        for (usize i = 0; i < top; i += 1) {
-            print("[%] % usages of '", fmt(usize, i), fmt(u16, byte_pair_vocabulary_counts.data[i]));
-            byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], false);
-            print("' = ");
-            byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], true);
-            print("\n");
+        bool print_byte_pair_expansions = false;
+        if (print_byte_pair_expansions) {
+            usize top = byte_pair_vocabulary.count;
+            print("[info] Expansion of top % pairs:\n", fmt(usize, top));
+            for (usize i = 0; i < top; i += 1) {
+                print("[%] % usages of '", fmt(usize, i), fmt(u16, byte_pair_vocabulary_counts.data[i]));
+                byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], false);
+                print("' = ");
+                byte_pair_print(byte_pairs, byte_pair_vocabulary.data[i], true);
+                print("\n");
+            }
         }
 
         for_slice (Document *, document, documents) {
@@ -461,7 +524,7 @@ void entrypoint(void) {
     typedef Slice(usize) Slice_usize;
     Slice_usize k_values = slice_of(usize, 1, 3, 5, 7, 9);
 
-    for (Mode mode = 0; mode < mode_count; mode += 1) {
+    for (Mode mode = 0; mode < 1 + byte_pair_enabled; mode += 1) {
         Arena_Temp temp = arena_temp_begin(&arena);
 
         String mode_string = mode == mode_word ? string("<word>") : string("<token>");

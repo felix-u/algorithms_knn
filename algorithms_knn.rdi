@@ -41,3 +41,13 @@ breakpoint:
   condition: "slot.item_index == 0"
   hit_count: 0
 }
+breakpoint:
+{
+  source_location: "C:/Users/Felix/Desktop/git/algorithms_knn/src/main.c:255:1"
+  hit_count: 1
+}
+breakpoint:
+{
+  source_location: "C:/Users/Felix/Desktop/git/algorithms_knn/src/main.c:261:1"
+  hit_count: 881
+}

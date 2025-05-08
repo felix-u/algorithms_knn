@@ -1,4 +1,4 @@
-Slice_String stopwords = slice_from_c_array(((String[]){
+Slice_String stopword_list = slice_of(String,
     // NOTE(felix): below are from https://snowballstem.org/algorithms/english/stop.txt
     stringc("which"),
     stringc("who"),
@@ -143,4 +143,4 @@ Slice_String stopwords = slice_from_c_array(((String[]){
     stringc("was"),
     stringc("will"),
     stringc("their"),
-}));
+);
