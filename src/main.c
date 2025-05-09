@@ -229,7 +229,8 @@ void entrypoint(void) {
         *count = (u16)new_count;
     }
 
-    usize vocabulary_size = 5000;
+    // NOTE(felix): make sure this is correct when outputting the final runs
+    usize vocabulary_size = 50;
 
     Map word_vocabulary = map_create(&arena, vocabulary_size, u16, map_key_string);
 
@@ -586,6 +587,7 @@ void entrypoint(void) {
 
         f64 precision_sum = 0;
         f64 recall_sum = 0;
+        f64 f1_sum = 0;
 
         print("[info] confusion:\n");
         Slice_Map_Key labels = map_get_keys(&confusion_matrix);
@@ -595,7 +597,7 @@ void entrypoint(void) {
         assert(labels.count == confusions.count);
         for (usize i = 0; i < labels.count; i += 1) {
             String label = labels.data[i].string;
-            print("\t'%':\t", fmt(String, label));
+            print("\t[%]\t", fmt(String, label));
 
             Confusion *confusions_this_label = &confusions.data[i];
             Slice_Map_Key confusion_labels = map_get_keys(&confusions_this_label->per_label);
@@ -618,24 +620,30 @@ void entrypoint(void) {
                     confusions_other_label->false_positives += 1;
                 }
 
-                print("'%'=%  ", fmt(String, confusion_label), fmt(usize, confusion_value));
+                print("%=%  ", fmt(String, confusion_label), fmt(usize, confusion_value));
             }
             print("\n");
 
             {
                 Confusion *c = confusions_this_label;
-                c->precision = (f32)c->true_positives / (f64)(c->true_positives + c->false_positives);
-                c->recall = (f32)c->true_positives / (f64)(c->true_positives + c->false_negatives);
+
+                c->precision = (f64)c->true_positives / (f64)(c->true_positives + c->false_positives);
                 precision_sum += c->precision;
+
+                c->recall = (f64)c->true_positives / (f64)(c->true_positives + c->false_negatives);
                 recall_sum += c->recall;
+
+                c->f1 = 2.0 * c->precision * c->recall / (c->precision + c->recall);
+                f1_sum += c->f1;
+
+                print("\t\tprecision: %%\trecall: %%\tf1: %%\n", fmt(f64, c->precision * 100.0), fmt(char, '%'), fmt(f64, c->recall * 100.0), fmt(char, '%'), fmt(f64, c->f1 * 100.0), fmt(char, '%'));
             }
         }
 
         f64 precision = precision_sum / (f64)labels.count;
-        print("[info] precision: %%\n", fmt(f64, precision * 100.0), fmt(char, '%'));
-
         f64 recall = recall_sum / (f64)labels.count;
-        print("[info] recall: %%\n", fmt(f64, recall * 100.0), fmt(char, '%'));
+        f64 f1 = f1_sum / (f64)labels.count;
+        print("[info] overall precision: %%, overall recall: %%, overall f1: %%\n", fmt(f64, precision * 100.0), fmt(char, '%'), fmt(f64, recall * 100.0), fmt(char, '%'), fmt(f64, f1 * 100.0), fmt(char, '%'));
 
         arena_temp_end(temp);
     }
