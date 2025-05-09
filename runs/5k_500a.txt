@@ -1,0 +1,32 @@
+[info] 'corpora\arxiv/raw.txt': 1740kB, 2000 documents
+[info] Computed vocabulary of top 5000 words; computed word vectors
+[info] Computed vocabulary of top 5000 byte pairs; computed token vectors
+[info] Shuffled and split documents: training (1200), validation (400), and testing (400)
+===== <word>
+[info] (validation) accuracy = (k = 1, 62.25%) (k = 3, 51.75%) (k = 5, 49.25%) (k = 7, 43.50%) (k = 9, 43.25%)
+[info] accuracy: 61.75% (k = 1)
+[info] confusion:
+        [q-bio.BM]      q-bio.BM=95  cs.AI=2  physics.optics=2
+                precision: 100.00%      recall: 95.95%  f1: 97.93%
+        [cs.LG] cs.LG=52  q-bio.BM=38  cs.AI=4  physics.optics=2
+                precision: 100.00%      recall: 54.16%  f1: 70.27%
+        [cs.AI] cs.AI=48  q-bio.BM=34  cs.LG=9  physics.optics=1
+                precision: 96.00%       recall: 52.17%  f1: 67.60%
+        [physics.optics]        physics.optics=52  q-bio.BM=59  cs.LG=2
+                precision: 94.54%       recall: 46.01%  f1: 61.90%
+[info] overall precision: 97.63%, overall recall: 62.07%, overall f1: 74.42%
+===== <token>
+[info] (validation) accuracy = (k = 1, 61.50%) (k = 3, 58.74%) (k = 5, 49.75%) (k = 7, 45.75%) (k = 9, 45.50%)
+[info] accuracy: 60.00% (k = 1)
+[info] confusion:
+        [q-bio.BM]      physics.optics=27  q-bio.BM=56  cs.AI=15  cs.LG=1
+                precision: 100.00%      recall: 56.56%  f1: 72.25%
+        [cs.LG] cs.LG=50  cs.AI=23  q-bio.BM=8  physics.optics=15
+                precision: 98.03%       recall: 52.08%  f1: 68.02%
+        [cs.AI] cs.AI=52  q-bio.BM=9  physics.optics=23  cs.LG=8
+                precision: 96.29%       recall: 56.52%  f1: 71.23%
+        [physics.optics]        physics.optics=82  cs.AI=12  q-bio.BM=14  cs.LG=5
+                precision: 96.47%       recall: 72.56%  f1: 82.82%
+[info] overall precision: 97.70%, overall recall: 59.43%, overall f1: 73.58%
+
+[info] McNemar's test: b = 68.00, c = 61.00, chi squared = 0.37; difference is significant at alpha = 0.05? false
