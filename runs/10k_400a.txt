@@ -1,0 +1,32 @@
+[info] 'corpora\arxiv/raw.txt': 1496kB, 1600 documents
+[info] Computed vocabulary of top 10000 words; computed word vectors
+[info] Computed vocabulary of top 10000 byte pairs; computed token vectors
+[info] Shuffled and split documents: training (960), validation (320), and testing (320)
+===== <word>
+[info] (validation) accuracy = (k = 1, 82.81%) (k = 3, 78.75%) (k = 5, 74.06%) (k = 7, 73.12%) (k = 9, 69.37%)
+[info] accuracy: 82.18% (k = 1)
+[info] confusion:
+        [physics.optics]        physics.optics=53  astro-ph.GA=8  q-bio.BM=13  cs.AI=3
+                precision: 100.00%      recall: 68.83%  f1: 81.53%
+        [cs.AI] cs.AI=61  q-bio.BM=7  astro-ph.GA=1  physics.optics=1
+                precision: 98.38%       recall: 87.14%  f1: 92.42%
+        [astro-ph.GA]   astro-ph.GA=77  physics.optics=5  q-bio.BM=5
+                precision: 97.46%       recall: 88.50%  f1: 92.77%
+        [q-bio.BM]      q-bio.BM=72  astro-ph.GA=10  physics.optics=4
+                precision: 96.00%       recall: 83.72%  f1: 89.44%
+[info] overall precision: 97.96%, overall recall: 82.05%, overall f1: 89.04%
+===== <token>
+[info] (validation) accuracy = (k = 1, 74.37%) (k = 3, 61.56%) (k = 5, 56.25%) (k = 7, 50.31%) (k = 9, 41.87%)
+[info] accuracy: 72.18% (k = 1)
+[info] confusion:
+        [physics.optics]        physics.optics=50  astro-ph.GA=15  q-bio.BM=10  cs.AI=2
+                precision: 100.00%      recall: 64.93%  f1: 78.74%
+        [cs.AI] cs.AI=50  q-bio.BM=7  physics.optics=9  astro-ph.GA=4
+                precision: 98.03%       recall: 71.42%  f1: 82.64%
+        [astro-ph.GA]   astro-ph.GA=67  q-bio.BM=13  physics.optics=7
+                precision: 97.10%       recall: 77.01%  f1: 85.89%
+        [q-bio.BM]      q-bio.BM=64  physics.optics=8  cs.AI=8  astro-ph.GA=6
+                precision: 95.52%       recall: 74.41%  f1: 83.66%
+[info] overall precision: 97.66%, overall recall: 71.94%, overall f1: 82.73%
+
+[info] McNemar's test: b = 65.00, c = 33.00, chi squared = 10.44; difference is significant at alpha = 0.05? true
