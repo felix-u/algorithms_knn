@@ -159,8 +159,6 @@ void entrypoint(void) {
     }
 
     Array_Document documents = { .arena = &arena };
-    usize character_removal_count = 0;
-    usize stopword_removal_count = 0;
     for (usize i = 0; i < corpus.count; i += 1) {
         Document document = {0};
 
@@ -177,7 +175,6 @@ void entrypoint(void) {
         array_ensure_capacity(&abstract_ascii_lowercase, abstract.count);
         for_slice (u8 *, c, abstract) {
             if (!ascii_is_alpha(*c) && !ascii_is_decimal(*c) && *c != ' ' && *c != '\n') {
-                character_removal_count += 1;
                 continue;
             }
             if (ascii_is_alpha(*c)) *c |= 0x20;
@@ -201,7 +198,6 @@ void entrypoint(void) {
 
             bool is_stopword = map_get(&stopword_map, string, word).index != 0;
             if (is_stopword) {
-                stopword_removal_count += 1;
                 continue;
             }
 
@@ -673,6 +669,8 @@ void entrypoint(void) {
             else unreachable;
         }
 
+        discard(both_correct);
+        discard(both_wrong);
         f64 b = (f64)word_correct_token_wrong;
         f64 c = (f64)word_wrong_token_correct;
         f64 chi_squared = (b - c) * (b - c) / (b + c);
