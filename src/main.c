@@ -657,30 +657,30 @@ void entrypoint(void) {
         f64 f1 = f1_sum / (f64)labels.count;
         print("[info] overall precision: %%, overall recall: %%, overall f1: %%\n", fmt(f64, precision * 100.0), fmt(char, '%'), fmt(f64, recall * 100.0), fmt(char, '%'), fmt(f64, f1 * 100.0), fmt(char, '%'));
 
-        usize both_correct = 0;
-        usize word_correct_token_wrong = 0;
-        usize word_wrong_token_correct = 0;
-        usize both_wrong = 0;
-        for_slice (McNemar *, m, mcnemars) {
-            if (m->word_correct && m->token_correct) both_correct += 1;
-            else if (!m->word_correct && !m->token_correct) both_wrong += 1;
-            else if (m->word_correct) word_correct_token_wrong += 1;
-            else if (m->token_correct) word_wrong_token_correct += 1;
-            else unreachable;
-        }
-
-        discard(both_correct);
-        discard(both_wrong);
-        f64 b = (f64)word_correct_token_wrong;
-        f64 c = (f64)word_wrong_token_correct;
-        f64 chi_squared = (b - c) * (b - c) / (b + c);
-        print("[info] McNemar's test: b = %, c = %, chi squared = %", fmt(f64, b), fmt(f64, c), fmt(f64, chi_squared));
-        print("; difference is significant at alpha = 0.05? %", fmt(bool, chi_squared > 3.84));
-        if (b + c < 25.0) print(" (sample too small! using exact binomial would be better)");
-        print("\n");
-
         arena_temp_end(temp);
     }
+
+    usize both_correct = 0;
+    usize word_correct_token_wrong = 0;
+    usize word_wrong_token_correct = 0;
+    usize both_wrong = 0;
+    for_slice (McNemar *, m, mcnemars) {
+        if (m->word_correct && m->token_correct) both_correct += 1;
+        else if (!m->word_correct && !m->token_correct) both_wrong += 1;
+        else if (m->word_correct) word_correct_token_wrong += 1;
+        else if (m->token_correct) word_wrong_token_correct += 1;
+        else unreachable;
+    }
+
+    discard(both_correct);
+    discard(both_wrong);
+    f64 b = (f64)word_correct_token_wrong;
+    f64 c = (f64)word_wrong_token_correct;
+    f64 chi_squared = (b - c) * (b - c) / (b + c);
+    print("\n[info] McNemar's test: b = %, c = %, chi squared = %", fmt(f64, b), fmt(f64, c), fmt(f64, chi_squared));
+    print("; difference is significant at alpha = 0.05? %", fmt(bool, chi_squared > 3.84));
+    if (b + c < 25.0) print(" (sample too small! using exact binomial would be better)");
+    print("\n");
 
     arena_deinit(&arena);
     exit(0);

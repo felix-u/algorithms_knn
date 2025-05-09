@@ -1,0 +1,32 @@
+[info] 'corpora\arxiv/raw.txt': 1496kB, 1600 documents
+[info] Computed vocabulary of top 5000 words; computed word vectors
+[info] Computed vocabulary of top 5000 byte pairs; computed token vectors
+[info] Shuffled and split documents: training (960), validation (320), and testing (320)
+===== <word>
+[info] (validation) accuracy = (k = 1, 79.68%) (k = 3, 63.75%) (k = 5, 58.12%) (k = 7, 51.87%) (k = 9, 50.00%)
+[info] accuracy: 77.50% (k = 1)
+[info] confusion:
+        [physics.optics]        physics.optics=55  q-bio.BM=13  astro-ph.GA=6  cs.AI=3
+                precision: 100.00%      recall: 71.42%  f1: 83.33%
+        [cs.AI] cs.AI=49  q-bio.BM=13  physics.optics=5  astro-ph.GA=3
+                precision: 98.00%       recall: 70.00%  f1: 81.66%
+        [astro-ph.GA]   q-bio.BM=8  astro-ph.GA=70  physics.optics=6  cs.AI=3
+                precision: 97.22%       recall: 80.45%  f1: 88.05%
+        [q-bio.BM]      q-bio.BM=74  astro-ph.GA=4  physics.optics=6  cs.AI=2
+                precision: 96.10%       recall: 86.04%  f1: 90.79%
+[info] overall precision: 97.83%, overall recall: 76.98%, overall f1: 85.96%
+===== <token>
+[info] (validation) accuracy = (k = 1, 65.00%) (k = 3, 56.25%) (k = 5, 49.68%) (k = 7, 47.50%) (k = 9, 40.62%)
+[info] accuracy: 67.50% (k = 1)
+[info] confusion:
+        [physics.optics]        physics.optics=40  astro-ph.GA=22  cs.AI=3  q-bio.BM=12
+                precision: 100.00%      recall: 51.94%  f1: 68.37%
+        [cs.AI] cs.AI=44  astro-ph.GA=13  q-bio.BM=13
+                precision: 97.77%       recall: 62.85%  f1: 76.52%
+        [astro-ph.GA]   q-bio.BM=13  astro-ph.GA=69  physics.optics=3  cs.AI=2
+                precision: 97.18%       recall: 79.31%  f1: 87.34%
+        [q-bio.BM]      q-bio.BM=63  astro-ph.GA=14  physics.optics=4  cs.AI=5
+                precision: 95.45%       recall: 73.25%  f1: 82.89%
+[info] overall precision: 97.60%, overall recall: 66.84%, overall f1: 78.78%
+
+[info] McNemar's test: b = 70.00, c = 38.00, chi squared = 9.48; difference is significant at alpha = 0.05? true
