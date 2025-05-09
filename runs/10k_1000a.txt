@@ -1,0 +1,32 @@
+[info] 'corpora\arxiv/raw.txt': 3902kB, 4000 documents
+[info] Computed vocabulary of top 10000 words; computed word vectors
+[info] Computed vocabulary of top 10000 byte pairs; computed token vectors
+[info] Shuffled and split documents: training (2400), validation (800), and testing (800)
+===== <word>
+[info] (validation) accuracy = (k = 1, 74.62%) (k = 3, 70.62%) (k = 5, 60.50%) (k = 7, 57.00%) (k = 9, 54.12%)
+[info] accuracy: 75.37% (k = 1)
+[info] confusion:
+        [astro-ph.GA]   astro-ph.GA=145  physics.optics=40  q-bio.BM=15  cs.AI=2
+                precision: 100.00%      recall: 71.78%  f1: 83.57%
+        [physics.optics]        physics.optics=182  cs.AI=8  q-bio.BM=18  astro-ph.GA=1
+                precision: 99.45%       recall: 87.08%  f1: 92.85%
+        [cs.AI] cs.AI=128  q-bio.BM=18  physics.optics=41  astro-ph.GA=3
+                precision: 98.46%       recall: 67.36%  f1: 80.00%
+        [q-bio.BM]      q-bio.BM=148  astro-ph.GA=3  physics.optics=47  cs.AI=1
+                precision: 98.01%       recall: 74.37%  f1: 84.57%
+[info] overall precision: 98.98%, overall recall: 75.15%, overall f1: 85.25%
+===== <token>
+[info] (validation) accuracy = (k = 1, 69.62%) (k = 3, 64.50%) (k = 5, 60.12%) (k = 7, 58.62%) (k = 9, 59.24%)
+[info] accuracy: 74.62% (k = 1)
+[info] confusion:
+        [astro-ph.GA]   astro-ph.GA=134  q-bio.BM=63  cs.AI=4  physics.optics=1
+                precision: 100.00%      recall: 66.33%  f1: 79.76%
+        [physics.optics]        physics.optics=139  q-bio.BM=54  astro-ph.GA=9  cs.AI=7
+                precision: 99.28%       recall: 66.50%  f1: 79.65%
+        [cs.AI] cs.AI=140  q-bio.BM=42  physics.optics=3  astro-ph.GA=5
+                precision: 98.59%       recall: 73.68%  f1: 84.33%
+        [q-bio.BM]      q-bio.BM=184  astro-ph.GA=6  cs.AI=4  physics.optics=5
+                precision: 98.39%       recall: 92.46%  f1: 95.33%
+[info] overall precision: 99.06%, overall recall: 74.74%, overall f1: 84.77%
+
+[info] McNemar's test: b = 115.00, c = 109.00, chi squared = 0.16; difference is significant at alpha = 0.05? false

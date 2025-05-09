@@ -1,0 +1,32 @@
+[info] 'corpora\arxiv/raw.txt': 1740kB, 2000 documents
+[info] Computed vocabulary of top 10000 words; computed word vectors
+[info] Computed vocabulary of top 10000 byte pairs; computed token vectors
+[info] Shuffled and split documents: training (1200), validation (400), and testing (400)
+===== <word>
+[info] (validation) accuracy = (k = 1, 74.00%) (k = 3, 70.50%) (k = 5, 66.75%) (k = 7, 66.50%) (k = 9, 63.50%)
+[info] accuracy: 76.75% (k = 1)
+[info] confusion:
+        [q-bio.BM]      q-bio.BM=91  physics.optics=5  cs.AI=2  cs.LG=1
+                precision: 100.00%      recall: 91.91%  f1: 95.78%
+        [cs.LG] q-bio.BM=17  cs.LG=71  physics.optics=2  cs.AI=6
+                precision: 98.61%       recall: 73.95%  f1: 84.52%
+        [cs.AI] cs.AI=70  q-bio.BM=13  cs.LG=7  physics.optics=2
+                precision: 97.22%       recall: 76.08%  f1: 85.36%
+        [physics.optics]        physics.optics=75  q-bio.BM=31  cs.LG=6  cs.AI=1
+                precision: 96.15%       recall: 66.37%  f1: 78.53%
+[info] overall precision: 97.99%, overall recall: 77.08%, overall f1: 86.05%
+===== <token>
+[info] (validation) accuracy = (k = 1, 56.50%) (k = 3, 58.74%) (k = 5, 53.25%) (k = 7, 52.24%) (k = 9, 52.00%)
+[info] accuracy: 68.25% (k = 3)
+[info] confusion:
+        [q-bio.BM]      physics.optics=31  q-bio.BM=59  cs.LG=2  cs.AI=7
+                precision: 100.00%      recall: 59.59%  f1: 74.68%
+        [cs.LG] physics.optics=20  cs.LG=60  cs.AI=13  q-bio.BM=3
+                precision: 98.36%       recall: 62.50%  f1: 76.43%
+        [cs.AI] cs.LG=17  cs.AI=45  physics.optics=29  q-bio.BM=1
+                precision: 95.74%       recall: 48.91%  f1: 64.74%
+        [physics.optics]        physics.optics=109  cs.LG=2  q-bio.BM=1  cs.AI=1
+                precision: 97.32%       recall: 96.46%  f1: 96.88%
+[info] overall precision: 97.85%, overall recall: 66.86%, overall f1: 78.18%
+
+[info] McNemar's test: b = 89.00, c = 55.00, chi squared = 8.02; difference is significant at alpha = 0.05? true
