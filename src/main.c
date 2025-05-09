@@ -230,9 +230,10 @@ void entrypoint(void) {
     }
 
     // NOTE(felix): make sure this is correct when outputting the final runs
-    usize vocabulary_size = 50;
-
+    usize vocabulary_size = 5000;
     Map word_vocabulary = map_create(&arena, vocabulary_size, u16, map_key_string);
+    usize top = clamp_low(50, vocabulary_size);
+    bool print_top = false;
 
     {
         Slice_Map_Key words = map_get_keys(&word_map);
@@ -289,9 +290,15 @@ void entrypoint(void) {
             }
             vector->length = sqrt(sum_of_squares);
         }
-        print("computed word vectors");
+        print("computed word vectors\n");
+
+        if (print_top) {
+            print("[info] Expansion of top % words:\n", fmt(usize, top));
+            for (usize i = 0; i < top; i += 1) {
+                print("\t[%] % usages of '%'\n", fmt(usize, i), fmt(u16, counts.data[i]), fmt(String, words.data[i].string));
+            }
+        }
     }
-    print("\n");
 
     bool byte_pair_enabled = true;
     if (byte_pair_enabled) {
@@ -410,19 +417,6 @@ void entrypoint(void) {
         if (byte_pair_vocabulary.count < vocabulary_size) print(" (maximum compression reached before %-token max vocabulary size)", fmt(usize, vocabulary_size));
         print("; ");
 
-        bool print_byte_pair_expansions = false;
-        if (print_byte_pair_expansions) {
-            usize top = byte_pair_vocabulary.count;
-            print("[info] Expansion of top % pairs:\n", fmt(usize, top));
-            for (usize i = 0; i < top; i += 1) {
-                print("[%] % usages of '", fmt(usize, i), fmt(u16, byte_pair_vocabulary_counts.data[i]));
-                byte_pair_print(byte_pair_dictionary, byte_pair_vocabulary.data[i], false);
-                print("' = ");
-                byte_pair_print(byte_pair_dictionary, byte_pair_vocabulary.data[i], true);
-                print("\n");
-            }
-        }
-
         for_slice (Document *, document, documents) {
             Mode mode = mode_token;
             Vector *vector = &document->vectors[mode];
@@ -456,6 +450,17 @@ void entrypoint(void) {
             vector->length = sqrt(sum_of_squares);
         }
         print("computed token vectors\n", fmt(usize, documents.count));
+
+        if (print_top) {
+            print("[info] Expansion of top % byte pairs:\n", fmt(usize, top));
+            for (usize i = 0; i < top; i += 1) {
+                print("\t[%] % usages of '", fmt(usize, i), fmt(u16, byte_pair_vocabulary_counts.data[i]));
+                byte_pair_print(byte_pair_dictionary, byte_pair_vocabulary.data[i], false);
+                print("' = ");
+                byte_pair_print(byte_pair_dictionary, byte_pair_vocabulary.data[i], true);
+                print("\n");
+            }
+        }
     }
 
     for (usize i = 0; i < documents.count; i += 1) {
@@ -488,6 +493,11 @@ void entrypoint(void) {
     Array_Document training_set = splits[train_id];
     Array_Document validation_set = splits[validation_id];
     Array_Document testing_set = splits[testing_id];
+
+    structdef(McNemar) { bool word_correct, token_correct; };
+    Array_McNemar mcnemars = { .arena = &arena };
+    array_ensure_capacity(&mcnemars, testing_set.count);
+    mcnemars.count = testing_set.count;
 
     typedef Slice(usize) Slice_usize;
     Slice_usize k_values = slice_of(usize, 1, 3, 5, 7, 9);
@@ -571,7 +581,13 @@ void entrypoint(void) {
             for (usize i = 0; i < testing_guesses.count; i += 1) {
                 String testing_label = testing_set.data[i].label;
                 String guess_label = testing_guesses.data[i];
-                correct_guess_count += string_equal(testing_label, guess_label);
+                bool guess_is_correct = string_equal(testing_label, guess_label);
+
+                if (guess_is_correct) {
+                    correct_guess_count += 1;
+                    if (mode == mode_word) mcnemars.data[i].word_correct = true;
+                    else mcnemars.data[i].token_correct = true;
+                }
 
                 Confusion *confusions = map_get(&confusion_matrix, string, testing_label, .or_new = true).item;
                 if (!confusions->initialised) {
@@ -644,6 +660,26 @@ void entrypoint(void) {
         f64 recall = recall_sum / (f64)labels.count;
         f64 f1 = f1_sum / (f64)labels.count;
         print("[info] overall precision: %%, overall recall: %%, overall f1: %%\n", fmt(f64, precision * 100.0), fmt(char, '%'), fmt(f64, recall * 100.0), fmt(char, '%'), fmt(f64, f1 * 100.0), fmt(char, '%'));
+
+        usize both_correct = 0;
+        usize word_correct_token_wrong = 0;
+        usize word_wrong_token_correct = 0;
+        usize both_wrong = 0;
+        for_slice (McNemar *, m, mcnemars) {
+            if (m->word_correct && m->token_correct) both_correct += 1;
+            else if (!m->word_correct && !m->token_correct) both_wrong += 1;
+            else if (m->word_correct) word_correct_token_wrong += 1;
+            else if (m->token_correct) word_wrong_token_correct += 1;
+            else unreachable;
+        }
+
+        f64 b = (f64)word_correct_token_wrong;
+        f64 c = (f64)word_wrong_token_correct;
+        f64 chi_squared = (b - c) * (b - c) / (b + c);
+        print("[info] McNemar's test: b = %, c = %, chi squared = %", fmt(f64, b), fmt(f64, c), fmt(f64, chi_squared));
+        print("; difference is significant at alpha = 0.05? %", fmt(bool, chi_squared > 3.84));
+        if (b + c < 25.0) print(" (sample too small! using exact binomial would be better)");
+        print("\n");
 
         arena_temp_end(temp);
     }
