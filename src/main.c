@@ -229,7 +229,7 @@ void entrypoint(void) {
         *count = (u16)new_count;
     }
 
-    usize vocabulary_size = 50;
+    usize vocabulary_size = 5000;
 
     Map word_vocabulary = map_create(&arena, vocabulary_size, u16, map_key_string);
 
@@ -288,7 +288,7 @@ void entrypoint(void) {
             }
             vector->length = sqrt(sum_of_squares);
         }
-        print("computed word vectors; ");
+        print("computed word vectors");
     }
     print("\n");
 
@@ -495,6 +495,7 @@ void entrypoint(void) {
         Arena_Temp temp = arena_temp_begin(&arena);
 
         String mode_string = mode == mode_word ? string("<word>") : string("<token>");
+        print("===== %\n", fmt(String, mode_string));
 
         typedef Array(Array_String) Array_Array_String;
         Array_Array_String validation_guesses_per_k = { .arena = &arena };
@@ -518,7 +519,7 @@ void entrypoint(void) {
         usize best_k_index = 0;
         usize max_correct_guess_count = 0;
 
-        print("[info] % (validation) accuracy = ", fmt(String, mode_string));
+        print("[info] (validation) accuracy = ");
         for (usize k_index = 0; k_index < k_values.count; k_index += 1) {
             Array_String validation_guesses = validation_guesses_per_k.data[k_index];
             usize k = k_values.data[k_index];
@@ -542,11 +543,18 @@ void entrypoint(void) {
         print("\n");
 
         usize best_k = k_values.data[best_k_index];
-        print("[info] % Choosing k = %\n", fmt(String, mode_string), fmt(usize, best_k));
 
         // TODO(felix): this should be determined from input data when we read in the documents
         usize label_count = 4;
-        Map confusion_matrix = map_create(&arena, label_count + 1, Map, map_key_string);
+
+        structdef(Confusion) {
+            bool initialised;
+            Map per_label;
+            usize true_positives, false_positives, false_negatives;
+            f64 precision, recall, f1;
+        };
+
+        Map confusion_matrix = map_create(&arena, label_count + 1, Confusion, map_key_string);
 
         {
             Array_String testing_guesses = { .arena = &arena };
@@ -564,19 +572,24 @@ void entrypoint(void) {
                 String guess_label = testing_guesses.data[i];
                 correct_guess_count += string_equal(testing_label, guess_label);
 
-                Map *confusions = map_get(&confusion_matrix, string, testing_label, .or_new = true).item;
-                bool confusions_uninitialised = confusions->items.arena == 0;
-                if (confusions_uninitialised) *confusions = map_create(&arena, label_count + 1, u16, map_key_string);
-                u16 *confusion = map_get(confusions, string, guess_label, .or_new = true).item;
+                Confusion *confusions = map_get(&confusion_matrix, string, testing_label, .or_new = true).item;
+                if (!confusions->initialised) {
+                    confusions->per_label = map_create(&arena, label_count + 1, usize, map_key_string);
+                    confusions->initialised = true;
+                }
+                usize *confusion = map_get(&confusions->per_label, string, guess_label, .or_new = true).item;
                 *confusion += 1;
             }
             f32 percentage = (f32)correct_guess_count / (f32)testing_guesses.count * 100.f;
-            print("[info] % (testing) accuracy %%, k = %\n", fmt(String, mode_string), fmt(f32, percentage), fmt(char, '%'), fmt(usize, best_k));
+            print("[info] accuracy: %% (k = %)\n", fmt(f32, percentage), fmt(char, '%'), fmt(usize, best_k));
         }
 
-        print("[info] % (testing) confusion:\n", fmt(String, mode_string));
+        f64 precision_sum = 0;
+        f64 recall_sum = 0;
+
+        print("[info] confusion:\n");
         Slice_Map_Key labels = map_get_keys(&confusion_matrix);
-        Slice_Map confusions = {0};
+        Slice_Confusion confusions = {0};
         map_get_items(&confusion_matrix, &confusions);
 
         assert(labels.count == confusions.count);
@@ -584,20 +597,45 @@ void entrypoint(void) {
             String label = labels.data[i].string;
             print("\t'%':\t", fmt(String, label));
 
-            Map confusions_this_label = confusions.data[i];
-            Slice_Map_Key confusion_labels = map_get_keys(&confusions_this_label);
-            typedef Slice(u16) Slice_u16;
-            Slice_u16 confusion_values = {0};
-            map_get_items(&confusions_this_label, &confusion_values);
+            Confusion *confusions_this_label = &confusions.data[i];
+            Slice_Map_Key confusion_labels = map_get_keys(&confusions_this_label->per_label);
+            Slice_usize confusion_values = {0};
+            map_get_items(&confusions_this_label->per_label, &confusion_values);
 
             assert(confusion_labels.count == confusion_values.count);
             for (usize j = 0; j < confusion_labels.count; j += 1) {
                 String confusion_label = confusion_labels.data[j].string;
-                u16 confusion_value = confusion_values.data[j];
-                print("'%'=%  ", fmt(String, confusion_label), fmt(u16, confusion_value));
+                usize confusion_value = confusion_values.data[j];
+
+                bool correct = string_equal(label, confusion_label);
+                if (correct) {
+                    assert(confusions_this_label->true_positives == 0);
+                    confusions_this_label->true_positives = confusion_value;
+                } else {
+                    confusions_this_label->false_negatives += confusion_value;
+
+                    Confusion *confusions_other_label = map_get(&confusion_matrix, string, confusion_label).item;
+                    confusions_other_label->false_positives += 1;
+                }
+
+                print("'%'=%  ", fmt(String, confusion_label), fmt(usize, confusion_value));
             }
             print("\n");
+
+            {
+                Confusion *c = confusions_this_label;
+                c->precision = (f32)c->true_positives / (f64)(c->true_positives + c->false_positives);
+                c->recall = (f32)c->true_positives / (f64)(c->true_positives + c->false_negatives);
+                precision_sum += c->precision;
+                recall_sum += c->recall;
+            }
         }
+
+        f64 precision = precision_sum / (f64)labels.count;
+        print("[info] precision: %%\n", fmt(f64, precision * 100.0), fmt(char, '%'));
+
+        f64 recall = recall_sum / (f64)labels.count;
+        print("[info] recall: %%\n", fmt(f64, recall * 100.0), fmt(char, '%'));
 
         arena_temp_end(temp);
     }
