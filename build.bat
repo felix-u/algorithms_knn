@@ -11,7 +11,7 @@ set dir_deps=..\deps
 set include_paths=-I%dir_deps%
 
 set cl_common=cl -nologo -FC -diagnostics:column -std:c11 -MT %include_paths%
-set clang_common=clang -pedantic -Wno-microsoft -std=c11 -MT %include_paths%
+set clang_common=clang -pedantic -Wno-microsoft -Wno-gnu-zero-variadic-macro-arguments -std=c11 -MT %include_paths%
 set cl_link=-link -entry:entrypoint -subsystem:console -incremental:no kernel32.lib shell32.lib ucrt.lib
 set clang_link=-lkernel32 -lshell32 -lucrt -Xlinker -entry:entrypoint -Xlinker -subsystem:console
 set cl_debug=%cl_common% -W4 -WX -Z7 -DBUILD_DEBUG=1

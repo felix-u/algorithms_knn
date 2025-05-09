@@ -150,7 +150,7 @@ void entrypoint(void) {
     String path_to_corpus = string_print(&arena, "%/%", fmt(String, corpus_directory), fmt(String, string("raw.txt")));
     String corpus = file_read_bytes_relative_path(&arena, cstring_from_string(&arena, path_to_corpus), UINT32_MAX);
     if (corpus.count == 0) exit(1);
-    print("[info] Read %kB from '%'\n", fmt(usize, corpus.count / 1024), fmt(String, path_to_corpus));
+    print("[info] '%': %kB, ", fmt(String, path_to_corpus), fmt(usize, corpus.count / 1024));
 
     Map stopword_map = map_create(&arena, stopword_list.count, bool, map_key_string);
     for_slice (String *, stopword, stopword_list) {
@@ -217,25 +217,19 @@ void entrypoint(void) {
     }
     usize total_word_count = 0;
     for_slice (Document *, document, documents) total_word_count += document->words.count;
-    print("[info] Removed % non-ASCII characters and % stopwords; total word count %\n", fmt(usize, character_removal_count), fmt(usize, stopword_removal_count), fmt(usize, total_word_count));
+    print("% documents\n", fmt(usize, documents.count));
 
     Map word_map = map_create(&arena, total_word_count, u16, map_key_string);
 
-    usize unique_count = 0;
-    usize repeat_count = 0;
     for_slice (Document *, document, documents) for_slice (String *, word, document->words) {
         Map_Get frequency = map_get(&word_map, string, *word, .or_new = true);
         assert(frequency.index != 0);
         u16 *count = frequency.item;
         usize new_count = clamp_high((usize)*count + 1, 0xffff);
         *count = (u16)new_count;
-
-        if (*count == 1) unique_count += 1;
-        else repeat_count += 1;
     }
-    print("[info] Found % unique words, % repeat words\n", fmt(usize, unique_count), fmt(usize, repeat_count));
 
-    usize vocabulary_size = 10000;
+    usize vocabulary_size = 50;
 
     Map word_vocabulary = map_create(&arena, vocabulary_size, u16, map_key_string);
 
@@ -266,7 +260,7 @@ void entrypoint(void) {
             *(u16 *)new.item = *best_count;
             *best_count = 0;
         }
-        print("[info] Computed vocabulary of top % most-used words\n", fmt(usize, vocabulary_size));
+        print("[info] Computed vocabulary of top % words; ", fmt(usize, vocabulary_size));
 
         for_slice (Document *, document, documents) {
             Mode mode = mode_word;
@@ -283,7 +277,6 @@ void entrypoint(void) {
                 else vector->items.data[get.index] += 1;
             }
         }
-        print("[info] Computed word vectors for all % documents\n", fmt(usize, documents.count));
 
         for_slice (Document *, document, documents) {
             Mode mode = mode_word;
@@ -295,14 +288,14 @@ void entrypoint(void) {
             }
             vector->length = sqrt(sum_of_squares);
         }
-        print("[info] Computed word vector lengths for all % documents\n", fmt(usize, documents.count));
+        print("computed word vectors; ");
     }
+    print("\n");
 
     bool byte_pair_enabled = true;
     if (byte_pair_enabled) {
         usize total_character_count = 0;
         for_slice (Document *, document, documents) total_character_count += document->text.count;
-        print("[info] Corpus has % characters total\n", fmt(usize, total_character_count));
 
         Map byte_pair_dictionary = map_create(&arena, total_character_count, u16, map_key_usize);
 
@@ -402,9 +395,9 @@ void entrypoint(void) {
 
             usize total_byte_pair_count = 0;
             for_slice (Document *, document, documents) total_byte_pair_count += document->byte_pair_indices.count;
-            print("\r[info] Byte pair merge %, total %", fmt(usize, byte_pair_vocabulary.count), fmt(usize, total_byte_pair_count));
+            print("\r[info] Byte pair merge %; pairs remaining: %\t", fmt(usize, byte_pair_vocabulary.count), fmt(usize, total_byte_pair_count));
         }
-        print("\n");
+        print("\r");
 
         usize effective_byte_pair_count = 0;
         for (; effective_byte_pair_count < byte_pair_vocabulary.count; effective_byte_pair_count += 1) {
@@ -412,9 +405,9 @@ void entrypoint(void) {
         }
         byte_pair_vocabulary.count = effective_byte_pair_count;
         byte_pair_vocabulary_counts.count = effective_byte_pair_count;
-        print("[info] Computed vocabulary of top % most-used byte pairs", fmt(usize, byte_pair_vocabulary.count));
+        print("[info] Computed vocabulary of top % byte pairs", fmt(usize, byte_pair_vocabulary.count));
         if (byte_pair_vocabulary.count < vocabulary_size) print(" (maximum compression reached before %-token max vocabulary size)", fmt(usize, vocabulary_size));
-        print("\n");
+        print("; ");
 
         bool print_byte_pair_expansions = false;
         if (print_byte_pair_expansions) {
@@ -449,7 +442,6 @@ void entrypoint(void) {
                 if (unknown) vector->items.data[byte_pair_vocabulary.count] += 1;
             }
         }
-        print("[info] Computed token vectors for all % documents\n", fmt(usize, documents.count));
 
         for_slice (Document *, document, documents) {
             Mode mode = mode_token;
@@ -462,7 +454,7 @@ void entrypoint(void) {
             }
             vector->length = sqrt(sum_of_squares);
         }
-        print("[info] Computed token vector lengths for all % documents\n", fmt(usize, documents.count));
+        print("computed token vectors\n", fmt(usize, documents.count));
     }
 
     for (usize i = 0; i < documents.count; i += 1) {
@@ -470,7 +462,7 @@ void entrypoint(void) {
         usize random_index_from_hash = compute_hash(bytes, documents.count);
         swap(Document, &documents.data[i], &documents.data[random_index_from_hash]);
     }
-    print("[info] Shuffled documents using hashes as source of randomness\n");
+    print("[info] Shuffled and split documents: ");
 
     enum { train_id, validation_id, testing_id, split_count };
     typedef Slice(f32) Slice_f32;
@@ -488,7 +480,7 @@ void entrypoint(void) {
 
         document_index += to_push.count;
     }
-    print("[info] Split dataset into training (%), validation (%), and testing (%)\n",
+    print("training (%), validation (%), and testing (%)\n",
         fmt(usize, splits[train_id].count), fmt(usize, splits[validation_id].count), fmt(usize, splits[testing_id].count)
     );
 
@@ -526,7 +518,7 @@ void entrypoint(void) {
         usize best_k_index = 0;
         usize max_correct_guess_count = 0;
 
-        print("[info] % (validation) ", fmt(String, mode_string));
+        print("[info] % (validation) accuracy = ", fmt(String, mode_string));
         for (usize k_index = 0; k_index < k_values.count; k_index += 1) {
             Array_String validation_guesses = validation_guesses_per_k.data[k_index];
             usize k = k_values.data[k_index];
@@ -552,6 +544,10 @@ void entrypoint(void) {
         usize best_k = k_values.data[best_k_index];
         print("[info] % Choosing k = %\n", fmt(String, mode_string), fmt(usize, best_k));
 
+        // TODO(felix): this should be determined from input data when we read in the documents
+        usize label_count = 4;
+        Map confusion_matrix = map_create(&arena, label_count + 1, Map, map_key_string);
+
         {
             Array_String testing_guesses = { .arena = &arena };
             array_ensure_capacity(&testing_guesses, testing_set.count);
@@ -567,9 +563,40 @@ void entrypoint(void) {
                 String testing_label = testing_set.data[i].label;
                 String guess_label = testing_guesses.data[i];
                 correct_guess_count += string_equal(testing_label, guess_label);
+
+                Map *confusions = map_get(&confusion_matrix, string, testing_label, .or_new = true).item;
+                bool confusions_uninitialised = confusions->items.arena == 0;
+                if (confusions_uninitialised) *confusions = map_create(&arena, label_count + 1, u16, map_key_string);
+                u16 *confusion = map_get(confusions, string, guess_label, .or_new = true).item;
+                *confusion += 1;
             }
             f32 percentage = (f32)correct_guess_count / (f32)testing_guesses.count * 100.f;
-            print("[info] % (testing) k = % had accuracy %%\n", fmt(String, mode_string), fmt(usize, best_k), fmt(f32, percentage), fmt(char, '%'));
+            print("[info] % (testing) accuracy %%, k = %\n", fmt(String, mode_string), fmt(f32, percentage), fmt(char, '%'), fmt(usize, best_k));
+        }
+
+        print("[info] % (testing) confusion:\n", fmt(String, mode_string));
+        Slice_Map_Key labels = map_get_keys(&confusion_matrix);
+        Slice_Map confusions = {0};
+        map_get_items(&confusion_matrix, &confusions);
+
+        assert(labels.count == confusions.count);
+        for (usize i = 0; i < labels.count; i += 1) {
+            String label = labels.data[i].string;
+            print("\t'%':\t", fmt(String, label));
+
+            Map confusions_this_label = confusions.data[i];
+            Slice_Map_Key confusion_labels = map_get_keys(&confusions_this_label);
+            typedef Slice(u16) Slice_u16;
+            Slice_u16 confusion_values = {0};
+            map_get_items(&confusions_this_label, &confusion_values);
+
+            assert(confusion_labels.count == confusion_values.count);
+            for (usize j = 0; j < confusion_labels.count; j += 1) {
+                String confusion_label = confusion_labels.data[j].string;
+                u16 confusion_value = confusion_values.data[j];
+                print("'%'=%  ", fmt(String, confusion_label), fmt(u16, confusion_value));
+            }
+            print("\n");
         }
 
         arena_temp_end(temp);
